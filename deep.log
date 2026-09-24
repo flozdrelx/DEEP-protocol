@@ -1,0 +1,8 @@
+2026-09-23 19:24:44,370 | INFO | DEEP started
+2026-09-23 19:24:44,370 | INFO | Received URI: deep://hello/
+2026-09-23 19:24:44,370 | INFO | Network: hello
+2026-09-23 19:24:44,370 | INFO | Resource: /
+2026-09-23 19:24:44,370 | INFO | Resolving network: hello
+2026-09-23 19:24:44,371 | INFO | Loading configuration: D:\emi\DEEP\config.json
+2026-09-23 19:24:44,371 | INFO | Found network 'DEEP Protocol Test Network' at http://127.0.0.1:8080
+2026-09-23 19:24:44,371 | INFO | Resolution result: status=200 message=Connected to DEEP Protocol Test Network at http://127.0.0.1:8080/
