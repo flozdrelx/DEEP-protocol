@@ -1,1 +1,14 @@
 __pycache__/
+deep.log
+.venv/
+.pytest_cache/
+*.egg-info/
+build/
+dist/
+certs/
+*.key
+bin/
+node-*/
+*.test
+*.exe
+coverage.out

@@ -1,8 +1,0 @@
-{
-    "networks": {
-        "hello": {
-            "name": "DEEP Protocol Test Network",
-            "endpoint": "http://127.0.0.1:8080"
-        }
-    }
-}
