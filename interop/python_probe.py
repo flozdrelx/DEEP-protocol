@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: Apache-2.0
-"""Independent DEEP V1 wire probe; Python is not a DEEP runtime dependency.
+"""Independent DEEP V2 wire probe; Python is not a DEEP runtime dependency.
 
-Only Python's standard library is used. OpenSSL performs TLS and hybrid key
+Only Python's standard library is used. OpenSSL must support ML-DSA-65 TLS
+authentication. OpenSSL performs TLS and hybrid key
 exchange. Python ssl does not expose the negotiated group: the Go server must
 independently enforce and verify X25519MLKEM768 before accepting DEEP frames.
 This test trusts an explicitly supplied server certificate, rather than
@@ -22,6 +23,7 @@ import struct
 import sys
 import tempfile
 import time
+import unicodedata
 from urllib.parse import urlsplit
 
 
@@ -30,7 +32,9 @@ MAX_METADATA = 8192
 MAX_CHUNK = 65536
 MAX_RESOURCE = 1 << 40
 HELLO, WELCOME, REQUEST, RESPONSE, DATA, END, ERROR, CLOSE = range(1, 9)
-ALPN = "deep/1"
+ALPN = "deep/2"
+PROTOCOL_VERSION = 2
+ML_DSA_65_OID = bytes.fromhex("608648016503040312")
 LABEL = r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?"
 
 
@@ -103,7 +107,7 @@ def receive_exact(connection, length, deadline):
 def read_frame(connection, deadline):
     header = receive_exact(connection, HEADER.size, deadline)
     magic, version, kind, flags, request_id, meta_size, body_size = HEADER.unpack(header)
-    if magic != b"DEEP" or version != 1 or flags != 0 or not HELLO <= kind <= CLOSE:
+    if magic != b"DEEP" or version != PROTOCOL_VERSION or flags != 0 or not HELLO <= kind <= CLOSE:
         raise ProbeError("invalid magic, framing version, type or flags")
     if not 2 <= meta_size <= MAX_METADATA or body_size > MAX_CHUNK:
         raise ProbeError("frame exceeds DEEP size limits")
@@ -122,7 +126,7 @@ def send_frame(connection, kind, request_id, metadata, deadline):
     raw = json.dumps(metadata, separators=(",", ":"), ensure_ascii=True).encode("ascii")
     if not 2 <= len(raw) <= MAX_METADATA:
         raise ProbeError("outgoing metadata exceeds the frame limit")
-    header = HEADER.pack(b"DEEP", 1, kind, 0, request_id, len(raw), 0)
+    header = HEADER.pack(b"DEEP", PROTOCOL_VERSION, kind, 0, request_id, len(raw), 0)
     connection.settimeout(remaining(deadline))
     connection.sendall(header + raw)
 
@@ -134,7 +138,9 @@ def check_frame(frame, kind, request_id):
     if actual_kind == ERROR:
         require_fields(metadata, ("code", "message"))
         code, message = metadata["code"], metadata["message"]
-        if type(code) is not str or not 1 <= len(code) <= 64 or type(message) is not str or len(message) > 1024:
+        if (type(code) is not str or re.fullmatch(r"[A-Z][A-Z0-9_]{0,63}", code) is None
+                or type(message) is not str or len(message.encode("utf-8")) > 1024
+                or any(unicodedata.category(char) in ("Cc", "Cf", "Zl", "Zp") for char in message)):
             raise ProbeError("invalid remote error")
         raise ProbeError("remote error " + code + ": " + message)
     if actual_kind != kind:
@@ -195,12 +201,16 @@ def arguments(argv=None):
     parser.add_argument("--address", required=True, type=parse_address)
     parser.add_argument("--authority", required=True)
     parser.add_argument("--cert", required=True, type=Path, help="explicitly trusted local server certificate (PEM)")
+    parser.add_argument("--client-cert", type=Path, help="ML-DSA-65 client certificate for mutual TLS")
+    parser.add_argument("--client-key", type=Path, help="private key paired with --client-cert")
     parser.add_argument("--path", default="/", help="percent-encoded resource path; queries are not sent")
     parser.add_argument("--output", type=Path, help="save the last verified response to a new file")
     parser.add_argument("--repeat", type=int, default=2, help="FETCH requests on the same session (default: 2, maximum: 16)")
     parser.add_argument("--max-bytes", type=int, default=64 << 20, help="maximum bytes per response (default: 64 MiB)")
     parser.add_argument("--timeout", type=float, default=30, help="overall connection/transfer deadline in seconds (default: 30)")
     args = parser.parse_args(argv)
+    if (args.client_cert is None) != (args.client_key is None):
+        parser.error("--client-cert and --client-key must be supplied together")
     if not re.fullmatch(LABEL + r"\." + LABEL, args.authority):
         parser.error("--authority must be canonical lowercase node.network")
     if not args.path.startswith("/") or len(args.path) > 4096 or re.search(r"[^A-Za-z0-9\-._~!$&'()*+,;=:@/%]", args.path) or re.search(r"%(?![0-9A-Fa-f]{2})", args.path):
@@ -214,11 +224,62 @@ def arguments(argv=None):
     return args
 
 
+def der_fields(encoded):
+    """Read bounded, canonical DER fields; TLS already verifies the certificate."""
+    fields = []
+    offset = 0
+    if len(encoded) > 65536:
+        raise ProbeError("certificate exceeds probe parsing limit")
+    while offset < len(encoded):
+        if offset + 2 > len(encoded):
+            raise ProbeError("truncated certificate DER")
+        tag, length = encoded[offset:offset + 2]
+        offset += 2
+        if length & 0x80:
+            count = length & 0x7F
+            if count == 0 or count > 3 or offset + count > len(encoded) or encoded[offset] == 0:
+                raise ProbeError("invalid certificate DER length")
+            length = int.from_bytes(encoded[offset:offset + count], "big")
+            offset += count
+            if length < 128:
+                raise ProbeError("noncanonical certificate DER length")
+        if offset + length > len(encoded):
+            raise ProbeError("truncated certificate DER value")
+        fields.append((tag, encoded[offset:offset + length]))
+        offset += length
+    return fields
+
+
+def require_mldsa65_certificate(encoded):
+    """Check SPKI's ML-DSA-65 OID without depending on a crypto Python package."""
+    outer = der_fields(encoded)
+    if len(outer) != 1 or outer[0][0] != 0x30:
+        raise ProbeError("invalid certificate structure")
+    certificate = der_fields(outer[0][1])
+    if len(certificate) != 3 or certificate[0][0] != 0x30:
+        raise ProbeError("invalid certificate structure")
+    tbs = der_fields(certificate[0][1])
+    spki_index = 6 if tbs and tbs[0][0] == 0xA0 else 5
+    if len(tbs) <= spki_index or tbs[spki_index][0] != 0x30:
+        raise ProbeError("certificate is missing SubjectPublicKeyInfo")
+    spki = der_fields(tbs[spki_index][1])
+    if len(spki) != 2 or spki[0][0] != 0x30 or spki[1][0] != 0x03:
+        raise ProbeError("invalid SubjectPublicKeyInfo")
+    algorithm = der_fields(spki[0][1])
+    if algorithm != [(0x06, ML_DSA_65_OID)]:
+        raise ProbeError("DEEP V2 requires an ML-DSA-65 server identity")
+
+
 def run(args):
     context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
     context.minimum_version = context.maximum_version = ssl.TLSVersion.TLSv1_3
     context.set_alpn_protocols([ALPN])
-    context.load_verify_locations(cafile=str(args.cert))
+    try:
+        context.load_verify_locations(cafile=str(args.cert))
+        if args.client_cert is not None:
+            context.load_cert_chain(str(args.client_cert), str(args.client_key))
+    except ssl.SSLError as error:
+        raise ProbeError("OpenSSL could not load the ML-DSA-65 certificate/key; use an OpenSSL build with ML-DSA TLS support: " + str(error)) from error
     # Keep certificate and hostname verification enabled. Do not call
     # set_ecdh_curve: its legacy curve API cannot select X25519MLKEM768.
     deadline = time.monotonic() + args.timeout
@@ -236,10 +297,11 @@ def run(args):
             with context.wrap_socket(raw, server_hostname=args.authority) as connection:
                 if connection.version() != "TLSv1.3" or connection.selected_alpn_protocol() != ALPN:
                     raise ProbeError("TLS 1.3 and DEEP ALPN were not negotiated")
-                send_frame(connection, HELLO, 0, {"versions": [1]}, deadline)
+                require_mldsa65_certificate(connection.getpeercert(binary_form=True))
+                send_frame(connection, HELLO, 0, {"versions": [PROTOCOL_VERSION]}, deadline)
                 welcome = check_frame(read_frame(connection, deadline), WELCOME, 0)
                 require_fields(welcome, ("version", "max_chunk"))
-                if type(welcome["version"]) is not int or welcome["version"] != 1 or type(welcome["max_chunk"]) is not int or welcome["max_chunk"] != MAX_CHUNK:
+                if type(welcome["version"]) is not int or welcome["version"] != PROTOCOL_VERSION or type(welcome["max_chunk"]) is not int or welcome["max_chunk"] != MAX_CHUNK:
                     raise ProbeError("unsupported application version or chunk size")
                 results = []
                 for request_id in range(1, args.repeat + 1):
@@ -251,6 +313,8 @@ def run(args):
                           "size": results[-1]["size"], "sha256": results[-1]["sha256"],
                           "tls_version": connection.version(), "alpn": connection.selected_alpn_protocol(),
                           "openssl": ssl.OPENSSL_VERSION, "requests": results,
+                          "authentication": "ML-DSA-65 (post-quantum)",
+                          "client_certificate_configured": args.client_cert is not None,
                           "key_exchange_verification": "not exposed by Python ssl; requires server-side assertion"}
         if output is not None:
             output.close()

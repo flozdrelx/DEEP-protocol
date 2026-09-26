@@ -19,12 +19,20 @@ import (
 func demo(ctx context.Context, out io.Writer) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	directory, err := os.MkdirTemp("", "deep-v1-demo-*")
+	directory, err := os.MkdirTemp("", "deep-v2-demo-*")
 	if err != nil {
 		return err
 	}
 	defer os.RemoveAll(directory)
 	registry := deep.NewRegistry()
+	clientCert, clientKey, clientPin, err := deep.GenerateClientIdentity("demo.alpha", time.Hour)
+	if err != nil {
+		return err
+	}
+	clientIdentity, err := tls.X509KeyPair(clientCert, clientKey)
+	if err != nil {
+		return err
+	}
 	var listeners []net.Listener
 	var handlers []*deep.FileHandler
 	var completions []chan error
@@ -71,7 +79,11 @@ func demo(ctx context.Context, out io.Writer) error {
 			return err
 		}
 		listeners = append(listeners, listener)
-		server := &deep.Server{Authority: authority, TLSConfig: deep.ServerTLSConfig(identity), Handler: handler}
+		transport, err := deep.ServerTLSConfigWithClientPins(identity, []string{clientPin})
+		if err != nil {
+			return err
+		}
+		server := &deep.Server{Authority: authority, TLSConfig: transport, Handler: handler}
 		completion := make(chan error, 1)
 		completions = append(completions, completion)
 		go func() { completion <- server.Serve(ctx, listener) }()
@@ -80,7 +92,8 @@ func demo(ctx context.Context, out io.Writer) error {
 		}
 	}
 	client := deep.NewClient(registry)
-	fmt.Fprintln(out, "DEEP V1: two independent networks, two local servers, no HTTP.")
+	client.Identity = &clientIdentity
+	fmt.Fprintln(out, "DEEP V2: two private networks, mutual ML-DSA-65 authentication, no HTTP.")
 	for _, network := range []string{"alpha", "beta"} {
 		uri := "deep://node." + network + "/"
 		session, err := client.Dial(ctx, uri)

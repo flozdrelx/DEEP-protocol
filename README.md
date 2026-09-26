@@ -1,25 +1,28 @@
-# DEEP V1
+# DEEP V2
 
-**Decentralized Extensible Endpoint Protocol**: a resource protocol with `deep://` addresses, its own messages, and networks connected through adapters. DEEP is independent of HellNet and HTTP.
+**Decentralized Extensible Endpoint Protocol - release 2.0.0**
 
-V1 includes a functional **Go** implementation with a client and server in one executable, chunked transfers, reusable sessions, and actual **TLS 1.3 + X25519MLKEM768** negotiation. Authentication uses Ed25519 identities and a trusted public-key fingerprint. This is a release for testing and interoperability; it does not imply public registration of `deep`, IETF approval, or a security audit.
+DEEP transfers resources through `deep://node.network/path` addresses using its own versioned messages. Networks plug in through adapters. The protocol is independent of HTTP and HellNet; a network integrates with DEEP rather than becoming part of its core.
 
-## Try it in a minute
+V2 requires **TLS 1.3**, hybrid **X25519 + ML-KEM-768** key establishment, and **ML-DSA-65** server authentication. Private nodes also require an authorized ML-DSA-65 client identity. The executable includes a client, file server, identity tools, and a local demo.
 
-From this project's directory, with **Go 1.25 or later**:
+This is the project's first official release line. It has automated validation and a documented threat model; it has not received an external security audit and is not an IETF-approved or publicly registered Internet standard.
+
+## Quick start
+
+The prebuilt executable does not require Go, Python, or external OpenSSL. From the project directory on Windows:
 
 ```powershell
-go run ./cmd/deep demo
+.\bin\deep.exe version
+.\bin\deep.exe demo
 ```
 
-The demo starts temporary servers for `deep://node.alpha/` and `deep://node.beta/`. It retrieves content, reuses each session for a larger transfer, and prints the **cryptographic group actually negotiated**. It stops the servers and removes its temporary files when finished.
+The demo creates two independent private networks, authenticates both ends, transfers text and binary content, and reuses each session. It prints the negotiated security profile and removes its temporary resources when finished.
 
-To build the executable on Windows:
+To build from source, use **Go 1.27.1 or later**, with the latest security patch for your Go release:
 
 ```powershell
 .\scripts\build.ps1
-.\bin\deep.exe version
-.\bin\deep.exe demo
 ```
 
 On Linux or macOS:
@@ -29,9 +32,9 @@ go build -trimpath -o bin/deep ./cmd/deep
 ./bin/deep demo
 ```
 
-V1 does not require Python, external OpenSSL, or third-party Go dependencies. The earlier prototype is retained in [`legacy/python-v0.1/`](legacy/python-v0.1/).
+There are no third-party Go runtime dependencies. Python is optional interoperability test tooling.
 
-## Create a node and retrieve content
+## Start a private node
 
 ```powershell
 .\bin\deep.exe init --authority node.alpha --dir node-alpha --address 127.0.0.1:9761
@@ -45,88 +48,124 @@ In another terminal:
 .\bin\deep.exe fetch deep://node.alpha/index.txt --config node-alpha/client.json --output received.txt --info
 ```
 
-`init` creates a **new** directory, an identity valid for one year, and these files:
+`init` creates a new directory and refuses to overwrite an existing one. It protects the directory with Unix permissions or a current-user Windows ACL before writing credentials.
 
 | File | Purpose |
 | --- | --- |
-| `server.json` | Authority, listening address, and server paths. |
-| `client.json` | Network, node address, and trusted public-key fingerprint. |
-| `identity.crt` | Public identity certificate. |
-| `identity.key` | Private key; keep it on the server. |
-| `content/index.txt` | Resource returned when requesting `/`. |
+| `server.json` | Server authority, listen address, resource root, access mode, allowed client pins, and operational limits. |
+| `client.json` | Trusted network endpoints, server pins, and paths to the client identity. |
+| `identity.crt`, `identity.key` | Server-only ML-DSA-65 certificate and private key. Keep the key on the server. |
+| `client.crt`, `client.key` | Initial authorized client identity. The client key grants access to this private node. |
+| `content/index.txt` | Default resource returned for `/`. |
 
-You can add files to `content/` and retrieve them by path. For example, request `content/docs/test.txt` as `deep://node.alpha/docs/test.txt`. The file server rejects queries (`?`), directories, and hidden or unsafe paths. Other resource providers can define their own behavior.
+Place only intended resources inside `content/`. For example, `content/docs/test.txt` is available at `deep://node.alpha/docs/test.txt`. Private authorization covers the node's entire resource set; V2 does not define per-path roles.
 
-`--output` writes to a temporary file first, verifies the size and SHA-256, and publishes the result without overwriting existing files. The destination directory must support hard links, as NTFS and ext4 do. Without `--output`, bytes stream directly to stdout: if an error occurs, the receiver must discard the partial output. `--info` writes JSON to stderr, separately from the content.
+`--output` writes a temporary file, checks the complete transfer's size and SHA-256, and publishes it without overwriting an existing file. Its destination must support hard links, such as NTFS or ext4. Without `--output`, `fetch` writes raw resource bytes to stdout; discard partial output if the command fails. Use the URI viewer for escaped terminal previews of untrusted content.
 
-The client's default limit is **1 GiB per resource**. You can adjust it with `--max-bytes 10737418240`, up to the protocol maximum of 1 TiB. `--timeout 60s` changes the client's per-operation limit; the server CLI uses 30 seconds per transfer. Ctrl+C stops the server.
+`--info` writes metadata and security information to stderr. The default client resource limit is 1 GiB; `--max-bytes` can change it up to the protocol maximum of 1 TiB. `--timeout 60s` changes the client operation timeout; the server enforces its own independent limits. Ctrl+C stops the server.
 
-To test between two computers, use a reachable address with `init --address`, run the server on that computer, and distribute `client.json` to the client through a trusted channel. Open the chosen port in your environment if necessary. Port 9761 in these examples is a local choice, not an officially assigned DEEP port.
+## Public nodes and additional clients
 
-## Connect your own network
+Public access must be selected explicitly:
 
-An address has the form `deep://node.network/path?query#fragment`. The suffix selects an explicitly installed adapter. `.hell`, `.quit`, and `.weird` are network names within DEEP; they do not need to be public DNS domains.
+```powershell
+.\bin\deep.exe init --authority public.alpha --dir node-public --address 127.0.0.1:9762 --public
+```
 
-A registry can contain multiple networks and nodes:
+Public nodes still require the same authenticated, encrypted server connection. They allow clients without a certificate to retrieve all served resources.
+
+Create a separate client identity for another user or device:
+
+```powershell
+.\bin\deep.exe client-init --authority laptop.alpha --dir client-laptop
+.\bin\deep.exe inspect --certificate client-laptop/client.crt
+```
+
+Add its public SPKI pin to the server's `allowed_client_pins` and restart the server. Configure that client's certificate and key in its own `client.json`. Removing a pin and restarting revokes its access and closes existing sessions. Do not copy the server private key to clients.
+
+For a different computer, select a reachable address at initialization and distribute the server pin and client configuration through a trusted channel. The default loopback address is local to one computer. Port 9761 is a configurable example, not an officially assigned DEEP port.
+
+See [Operations](docs/OPERATIONS.md) for configuration, credential distribution, rotation, revocation, resource limits, and deployment.
+
+## Network adapters
+
+The suffix selects an explicitly configured adapter. Names such as `.hell`, `.quit`, and `.weird` do not need public DNS registration. A version-2 client configuration can contain multiple networks:
 
 ```json
 {
-  "version": 1,
+  "version": 2,
+  "client_identity": {
+    "certificate": "client.crt",
+    "private_key": "client.key"
+  },
   "networks": {
     "alpha": {
       "adapter": "static",
       "endpoints": {
         "node.alpha": {
           "address": "127.0.0.1:9761",
-          "pin_sha256": "REPLACE_WITH_THE_REAL_64_CHARACTER_HEX_FINGERPRINT",
+          "pin_sha256": "REPLACE_WITH_THE_REAL_64_CHARACTER_HEX_SPKI_PIN",
           "transport": "tcp"
         }
       }
     },
     "weird": {
       "adapter": "exec",
-      "command": ["./my-resolver.exe", "--network", "weird"]
+      "command": ["./my-resolver.exe"]
     }
   }
 }
 ```
 
-The `exec` adapter lets you write the **resolver** in any language. DEEP runs the configured command without a command interpreter. The resolver receives this on stdin:
+Omit `client_identity` for a client that only uses public nodes. Identity paths and relative resolver paths are resolved from the configuration directory. The pin above is a placeholder, not a usable fingerprint.
+
+The `exec` resolver receives only the canonical authority on stdin:
 
 ```json
-{"version":1,"authority":"mkaifl2masdh3aknd0.weird"}
+{"version":2,"authority":"node.weird"}
 ```
 
-The program responds with a single JSON object on stdout:
+It must exit successfully and return one endpoint object on stdout:
 
 ```json
-{"address":"127.0.0.1:9761","pin_sha256":"REAL_64_CHARACTER_HEX_FINGERPRINT","transport":"tcp"}
+{"address":"127.0.0.1:9762","pin_sha256":"REPLACE_WITH_THE_REAL_64_CHARACTER_HEX_SPKI_PIN","transport":"tcp"}
 ```
 
-The fingerprints in these examples are placeholders and must be replaced. The resolver must exit with code zero; stderr is available for diagnostics. Relative executable paths that include a path separator are resolved from the configuration directory. The resolver also uses that directory as its working directory. Only configure trusted programs.
+The program is executed directly without a shell. Its output is bounded and strictly validated. It does not receive the URI path, query, fragment, or client credentials through the resolver request. It is trusted local code running with the user's permissions.
 
-`exec` resolves names; it does not carry resources through its pipes. The Go library also lets you register a `Client.Dialers["my-transport"]` that opens a `net.Conn` stream, and use your own `net.Listener` on the server. DEEP applies its TLS profile and messages over that stream. The distributed executable includes TCP; adding a transport requires integrating code into another client/server. Adapters do not change the DEEP wire format.
+The library supports custom reliable transports through `Client.Dialers` and `Server.Serve(ctx, net.Listener)`. DEEP applies the same TLS and framing over them. The shipped executable uses TCP. Custom connections must support deadlines and return a stable peer address for per-peer limits.
 
-The project name expresses its goal: **V1 does not implement a DHT or automatic decentralized discovery**. Each network can implement its own resolution and trust distribution. The local registry decides which adapter handles each suffix and rejects duplicates; there is no global authority for these names.
+DEEP does not implement automatic DHT discovery, global name ownership, or anonymous routing. Each network is responsible for authenticated resolution and distribution of trusted server pins. HellNet integration is a separate next step.
 
-## Open links in Windows (optional)
+## Optional Windows link handler
 
-To have Windows send `deep://` links to this console client:
+To open `deep://` links using the console viewer, place a working client configuration at `bin/config.json`. Identity paths in that copy must still resolve correctly; copying a private configuration to another directory does not copy its credentials or adjust relative paths.
 
 ```powershell
-Copy-Item node-alpha/client.json bin/config.json
 .\scripts\register.ps1 -Executable .\bin\deep.exe
 ```
 
-The script registers the scheme for **your user account**. If you registered the earlier prototype, add `-ReplaceExisting` to explicitly replace that handler. Registration does not run during the build. `open-uri` accepts exactly one URI, uses `config.json` beside the executable, displays the resource, and waits for Enter. It is a console viewer; it does not render HTML pages like a browser.
+Use `-ReplaceExisting` only when replacing another registered handler. The script registers the current user only and is never run automatically by the build. The viewer accepts exactly one URI, verifies the transfer, and displays an escaped preview of at most 1 MiB. It does not execute scripts or render HTML.
 
-## Development and specification
+## Validation and distribution
 
 ```powershell
 go test ./...
 go vet ./...
+go test -race ./...
+python -B -m unittest discover -s interop -p "test_*.py" -v
 ```
 
-The [DEEP V1 specification](docs/DEEP-V1.md) defines bytes, states, limits, identity, and adapters for implementations in other languages. The [independent interoperability probe](interop/README.md) implements the messages in Python for testing only; the DEEP executable does not depend on it. [SECURITY.md](SECURITY.md) describes the scope of PQC; the [roadmap](docs/ROADMAP.md) separates implemented features from future work.
+The race detector requires a compatible C compiler. CI includes multiple operating systems; cross-compiling a binary alone is not evidence that it was executed on that platform.
 
-The code and specification are distributed under [Apache License 2.0](LICENSE). Keep the notices in [NOTICE](NOTICE) when redistributing. Preparing these files does not automatically publish the project to any service.
+- [Protocol specification](docs/DEEP-V2.md)
+- [Security and threat model](SECURITY.md)
+- [Migration from V1](docs/MIGRATION-V2.md)
+- [Validation results](docs/VALIDATION-V2.md)
+- [Independent interoperability probe](interop/README.md)
+- [Changelog](CHANGELOG.md)
+- [Roadmap](docs/ROADMAP.md)
+
+Release archives and SHA-256 checksums are generated locally. Checksums detect changed bytes; they do not provide a publisher signature by themselves. Preparing a release does not publish it to a remote repository.
+
+Code and specification are licensed under [Apache License 2.0](LICENSE). Preserve [NOTICE](NOTICE) and [THIRD_PARTY_NOTICES](THIRD_PARTY_NOTICES) when redistributing.

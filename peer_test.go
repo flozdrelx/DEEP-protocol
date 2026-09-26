@@ -52,7 +52,7 @@ func receiveRequest(connection net.Conn) error {
 	if _, err := ReadFrame(connection); err != nil {
 		return err
 	}
-	if err := send(connection, Welcome, 0, welcomeMetadata{1, MaxChunkSize}, nil); err != nil {
+	if err := send(connection, Welcome, 0, welcomeMetadata{ProtocolVersion, MaxChunkSize}, nil); err != nil {
 		return err
 	}
 	_, err := ReadFrame(connection)
@@ -128,7 +128,7 @@ func dialRaw(t *testing.T, endpoint Endpoint) *tls.Conn {
 
 func TestServerProtocolStateAndVersion(t *testing.T) {
 	endpoint := startResourceServer(t, "node.alpha", HandlerFunc(func(context.Context, string, string) (Resource, error) { return resourceBytes([]byte("x")), nil }))
-	for _, versions := range [][]int{{2}, {1, 1}, {}} {
+	for _, versions := range [][]int{{1}, {2, 2}, {}} {
 		connection := dialRaw(t, endpoint)
 		if err := send(connection, Hello, 0, helloMetadata{versions}, nil); err != nil {
 			t.Fatal(err)
@@ -143,7 +143,7 @@ func TestServerProtocolStateAndVersion(t *testing.T) {
 		connection.Close()
 	}
 	connection := dialRaw(t, endpoint)
-	if err := send(connection, Hello, 0, helloMetadata{[]int{1}}, nil); err != nil {
+	if err := send(connection, Hello, 0, helloMetadata{[]int{ProtocolVersion}}, nil); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := ReadFrame(connection); err != nil {

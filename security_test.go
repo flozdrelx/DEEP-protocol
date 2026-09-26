@@ -2,16 +2,12 @@ package deep
 
 import (
 	"context"
-	"crypto/ecdsa"
-	"crypto/ed25519"
-	"crypto/elliptic"
-	"crypto/rand"
+	"crypto/mldsa"
 	"crypto/sha256"
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/hex"
 	"encoding/pem"
-	"math/big"
 	"net"
 	"strings"
 	"testing"
@@ -90,11 +86,11 @@ func TestSecurityRealHybridHandshake(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if info.KeyExchange != "X25519MLKEM768" || !info.PostQuantumKeyExchange || info.TLSVersion != "TLS 1.3" {
+		if info.KeyExchange != "X25519MLKEM768" || !info.PostQuantumKeyExchange || !info.PostQuantumAuthentication || info.Authentication != "ML-DSA-65" || info.TLSVersion != "TLS 1.3" {
 			t.Fatalf("unexpected negotiated security: %+v", info)
 		}
 		if result.state.DidResume {
-			t.Fatal("DEEP V1 unexpectedly resumed a TLS session")
+			t.Fatal("DEEP V2 unexpectedly resumed a TLS session")
 		}
 	}
 }
@@ -220,8 +216,8 @@ func TestSecurityPinAndCertificateMetadata(t *testing.T) {
 	if pin != hex.EncodeToString(digest[:]) {
 		t.Fatal("pin does not hash DER SubjectPublicKeyInfo")
 	}
-	if _, ok := cert.PublicKey.(ed25519.PublicKey); !ok {
-		t.Fatal("identity key is not Ed25519")
+	if _, ok := cert.PublicKey.(*mldsa.PublicKey); !ok {
+		t.Fatal("identity key is not ML-DSA")
 	}
 	if err := cert.VerifyHostname("node.alpha"); err != nil {
 		t.Fatal(err)
@@ -232,53 +228,23 @@ func TestSecurityPinAndCertificateMetadata(t *testing.T) {
 }
 
 func TestSecurityRejectsInvalidCertificateMetadata(t *testing.T) {
-	for _, kind := range []string{"expired", "future", "ecdsa"} {
+	for _, kind := range invalidSecurityIdentityKinds {
 		t.Run(kind, func(t *testing.T) {
-			public, private, err := ed25519.GenerateKey(rand.Reader)
+			cert, pin := malformedSecurityIdentity(t, x509.ExtKeyUsageServerAuth, kind)
+			client, err := ClientTLSConfig("node.alpha", pin)
 			if err != nil {
 				t.Fatal(err)
 			}
-			var pub, priv any = public, private
-			now := time.Now()
-			certTemplate := &x509.Certificate{
-				SerialNumber: big.NewInt(42), DNSNames: []string{"node.alpha"},
-				NotBefore: now.Add(-time.Hour), NotAfter: now.Add(time.Hour),
-				KeyUsage: x509.KeyUsageDigitalSignature,
-			}
-			switch kind {
-			case "expired":
-				certTemplate.NotBefore, certTemplate.NotAfter = now.Add(-2*time.Hour), now.Add(-time.Hour)
-			case "future":
-				certTemplate.NotBefore, certTemplate.NotAfter = now.Add(time.Hour), now.Add(2*time.Hour)
-			case "ecdsa":
-				key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
-				if err != nil {
-					t.Fatal(err)
-				}
-				pub, priv = &key.PublicKey, key
-			}
-			der, err := x509.CreateCertificate(rand.Reader, certTemplate, certTemplate, pub, priv)
-			if err != nil {
-				t.Fatal(err)
-			}
-			leaf, err := x509.ParseCertificate(der)
-			if err != nil {
-				t.Fatal(err)
-			}
-			digest := sha256.Sum256(leaf.RawSubjectPublicKeyInfo)
-			client, err := ClientTLSConfig("node.alpha", hex.EncodeToString(digest[:]))
-			if err != nil {
-				t.Fatal(err)
-			}
-			cert := tls.Certificate{Certificate: [][]byte{der}, PrivateKey: priv, Leaf: leaf}
-			_, result := securityHandshake(t, ServerTLSConfig(cert), client)
+			// A deliberately permissive peer ensures this exercises the client checks.
+			server := securityTLSConfig()
+			server.Certificates = []tls.Certificate{cert}
+			_, result := securityHandshake(t, server, client)
 			if result.err == nil {
 				t.Fatal("client accepted invalid identity metadata")
 			}
 		})
 	}
 }
-
 func TestSecurityInspectRejectsUnverifiedProfile(t *testing.T) {
 	valid := tls.ConnectionState{HandshakeComplete: true, Version: tls.VersionTLS13,
 		CurveID: tls.X25519MLKEM768, NegotiatedProtocol: ALPN}
@@ -287,6 +253,7 @@ func TestSecurityInspectRejectsUnverifiedProfile(t *testing.T) {
 		func(s *tls.ConnectionState) { s.Version = tls.VersionTLS12 },
 		func(s *tls.ConnectionState) { s.CurveID = tls.X25519 },
 		func(s *tls.ConnectionState) { s.NegotiatedProtocol = "" },
+		func(s *tls.ConnectionState) { s.DidResume = true },
 	} {
 		state := valid
 		change(&state)

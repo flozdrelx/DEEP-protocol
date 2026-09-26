@@ -9,10 +9,12 @@ import (
 	"fmt"
 	"io"
 	"strconv"
+	"unicode"
 	"unicode/utf8"
 )
 
-const Version = "1.0.0"
+const Version = "2.0.0"
+const ProtocolVersion = 2
 const HeaderSize = 20
 const MaxMetadataSize = 8192
 const MaxChunkSize = 65536
@@ -71,7 +73,7 @@ func ReadFrame(reader io.Reader) (Frame, error) {
 	if _, err := io.ReadFull(reader, header[:]); err != nil {
 		return frame, err
 	}
-	if string(header[:4]) != "DEEP" || header[4] != 1 || binary.BigEndian.Uint16(header[6:8]) != 0 {
+	if string(header[:4]) != "DEEP" || header[4] != ProtocolVersion || binary.BigEndian.Uint16(header[6:8]) != 0 {
 		return frame, protocolError("unknown magic, framing version, or flags")
 	}
 	frame.Type = MessageType(header[5])
@@ -106,7 +108,7 @@ func WriteFrame(writer io.Writer, frame Frame) error {
 	}
 	var header [HeaderSize]byte
 	copy(header[:4], "DEEP")
-	header[4], header[5] = 1, byte(frame.Type)
+	header[4], header[5] = ProtocolVersion, byte(frame.Type)
 	binary.BigEndian.PutUint32(header[8:12], frame.RequestID)
 	binary.BigEndian.PutUint32(header[12:16], uint32(len(frame.Metadata)))
 	binary.BigEndian.PutUint32(header[16:20], uint32(len(frame.Body)))
@@ -314,7 +316,35 @@ type RemoteError struct {
 	Message string `json:"message"`
 }
 
-func (e *RemoteError) Error() string { return e.Code + ": " + e.Message }
+// ValidateRemoteError checks limits before errors reach logs or a terminal.
+// Codes are ASCII tokens. Messages are UTF-8 text without control or format
+// characters, including ANSI escapes, line separators, and bidi controls.
+func ValidateRemoteError(e *RemoteError) error {
+	if e == nil || len(e.Code) < 1 || len(e.Code) > 64 || e.Code[0] < 'A' || e.Code[0] > 'Z' {
+		return protocolError("invalid remote error code")
+	}
+	for _, c := range e.Code {
+		if !(c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || c == '_') {
+			return protocolError("invalid remote error code")
+		}
+	}
+	if !utf8.ValidString(e.Message) || len(e.Message) > 1024 {
+		return protocolError("invalid remote error message")
+	}
+	for _, c := range e.Message {
+		if unicode.IsControl(c) || unicode.In(c, unicode.Cf, unicode.Zl, unicode.Zp) {
+			return protocolError("invalid remote error message")
+		}
+	}
+	return nil
+}
+
+func (e *RemoteError) Error() string {
+	if ValidateRemoteError(e) != nil {
+		return "invalid remote error"
+	}
+	return e.Code + ": " + e.Message
+}
 
 func validateMediaType(value string) bool {
 	if len(value) == 0 || len(value) > 255 {

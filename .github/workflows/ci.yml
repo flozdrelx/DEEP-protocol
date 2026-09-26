@@ -1,0 +1,73 @@
+name: DEEP V2 verification
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.14'
+      - name: Go tests
+        run: go test ./...
+      - name: Static analysis
+        run: go vet ./...
+      - name: Race detector
+        if: runner.os != 'Windows'
+        run: go test -race ./...
+      - name: Independent Python conformance tests
+        run: python -m unittest discover -s interop -p 'test_*.py' -v
+      - name: Native private-node demo
+        run: go run ./cmd/deep demo
+      - name: Build native executable for process tests
+        run: go build -trimpath -o bin/deep-test.exe ./cmd/deep
+      - name: Independent server and client processes
+        run: python scripts/smoke_test.py --binary bin/deep-test.exe --public-check
+      - name: Bounded protocol fuzzing
+        if: runner.os == 'Linux'
+        run: go test -run '^$' -fuzz '^FuzzReadFrame$' -fuzztime=10s -parallel=2
+
+  vulnerabilities:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: false
+      - name: Official Go vulnerability scan
+        run: go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 ./...
+
+  cross-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.14'
+      - name: Build local release archives
+        run: python scripts/release.py --output dist/ci
+      - name: Verify archive checksums
+        working-directory: dist/ci
+        run: sha256sum -c SHA256SUMS
+

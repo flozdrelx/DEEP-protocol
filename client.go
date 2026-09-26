@@ -26,6 +26,9 @@ type Client struct {
 	Dialers  map[string]DialFunc
 	Timeout  time.Duration
 	MaxBytes int64
+	// Identity is optional for public servers and required by private servers.
+	// Configure it before sharing the client between goroutines.
+	Identity *tls.Certificate
 }
 
 func NewClient(registry *Registry) *Client {
@@ -84,6 +87,12 @@ func (c *Client) Dial(ctx context.Context, value string) (*Session, error) {
 	if err != nil {
 		return nil, err
 	}
+	if c.Identity != nil {
+		if err := ValidateClientIdentity(*c.Identity); err != nil {
+			return nil, fmt.Errorf("client identity: %w", err)
+		}
+		config.Certificates = []tls.Certificate{*c.Identity}
+	}
 	raw, err := dial(ctx, endpoint)
 	if err != nil {
 		return nil, err
@@ -107,7 +116,7 @@ func (c *Client) Dial(ctx context.Context, value string) (*Session, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := send(connection, Hello, 0, helloMetadata{[]int{1}}, nil); err != nil {
+	if err := send(connection, Hello, 0, helloMetadata{[]int{ProtocolVersion}}, nil); err != nil {
 		return nil, err
 	}
 	frame, err := ReadFrame(connection)
@@ -121,7 +130,7 @@ func (c *Client) Dial(ctx context.Context, value string) (*Session, error) {
 	if err := DecodeMetadata(frame, &welcome, "version", "max_chunk"); err != nil {
 		return nil, err
 	}
-	if welcome.Version != 1 || welcome.MaxChunk != MaxChunkSize {
+	if welcome.Version != ProtocolVersion || welcome.MaxChunk != MaxChunkSize {
 		return nil, protocolError("unsupported protocol version or chunk size")
 	}
 	if err := ctx.Err(); err != nil {
@@ -134,8 +143,10 @@ func (c *Client) Dial(ctx context.Context, value string) (*Session, error) {
 	if maxBytes < 0 || maxBytes > MaxResourceSize {
 		return nil, errors.New("invalid resource byte limit")
 	}
+	if err := connection.SetDeadline(time.Time{}); err != nil {
+		return nil, err
+	}
 	success = true
-	connection.SetDeadline(time.Time{})
 	return &Session{Security: security, authority: uri.Authority, connection: connection,
 		timeout: timeout, maxBytes: maxBytes, nextID: 1}, nil
 }
@@ -181,6 +192,8 @@ func (s *Session) Fetch(ctx context.Context, value string, destination io.Writer
 			s.connection.Close()
 		}
 	}()
+	ctx, cancel := context.WithTimeout(ctx, s.timeout)
+	defer cancel()
 	stop := context.AfterFunc(ctx, func() { s.connection.Close() })
 	defer stop()
 	if err = setDeadline(s.connection, ctx, s.timeout); err != nil {
@@ -244,7 +257,9 @@ func (s *Session) Fetch(ctx context.Context, value string, destination io.Writer
 			if err = ctx.Err(); err != nil {
 				return result, err
 			}
-			s.connection.SetDeadline(time.Time{})
+			if err = s.connection.SetDeadline(time.Time{}); err != nil {
+				return result, err
+			}
 			return Result{metadata.MediaType, received, digest, s.Security}, nil
 		case Error:
 			return result, expect(frame, End, id)
@@ -259,8 +274,9 @@ func (s *Session) Close() error {
 		return nil
 	}
 	if s.mutex.TryLock() {
-		s.connection.SetWriteDeadline(time.Now().Add(200 * time.Millisecond))
-		_ = send(s.connection, Close, 0, struct{}{}, nil)
+		if s.connection.SetWriteDeadline(time.Now().Add(200*time.Millisecond)) == nil {
+			_ = send(s.connection, Close, 0, struct{}{}, nil)
+		}
 		s.mutex.Unlock()
 	}
 	return s.connection.Close()
@@ -275,7 +291,7 @@ func expect(frame Frame, kind MessageType, id uint32) error {
 		if err := DecodeMetadata(frame, &remote, "code", "message"); err != nil {
 			return err
 		}
-		if len(remote.Code) == 0 || len(remote.Code) > 64 || len(remote.Message) > 1024 {
+		if ValidateRemoteError(&remote) != nil {
 			return protocolError("invalid remote error")
 		}
 		return &remote

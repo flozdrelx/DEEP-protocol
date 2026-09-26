@@ -12,9 +12,9 @@ import (
 )
 
 func TestHelloVector(t *testing.T) {
-	want, _ := hex.DecodeString("44454550010100000000000000000010000000007b2276657273696f6e73223a5b315d7d")
+	want, _ := hex.DecodeString("44454550020100000000000000000010000000007b2276657273696f6e73223a5b325d7d")
 	var encoded bytes.Buffer
-	if err := send(&encoded, Hello, 0, helloMetadata{[]int{1}}, nil); err != nil {
+	if err := send(&encoded, Hello, 0, helloMetadata{[]int{ProtocolVersion}}, nil); err != nil {
 		t.Fatal(err)
 	}
 	if !bytes.Equal(encoded.Bytes(), want) {
@@ -25,7 +25,7 @@ func TestHelloVector(t *testing.T) {
 		t.Fatal(err)
 	}
 	var hello helloMetadata
-	if err := DecodeMetadata(frame, &hello, "versions"); err != nil || len(hello.Versions) != 1 || hello.Versions[0] != 1 {
+	if err := DecodeMetadata(frame, &hello, "versions"); err != nil || len(hello.Versions) != 1 || hello.Versions[0] != ProtocolVersion {
 		t.Fatalf("decode: %v %+v", err, hello)
 	}
 }
@@ -71,7 +71,7 @@ func TestFragmentationCoalescingAndShortWrites(t *testing.T) {
 func rawFrame(kind MessageType, id uint32, meta, body []byte) []byte {
 	raw := make([]byte, HeaderSize+len(meta)+len(body))
 	copy(raw, "DEEP")
-	raw[4] = 1
+	raw[4] = ProtocolVersion
 	raw[5] = byte(kind)
 	binary.BigEndian.PutUint32(raw[8:12], id)
 	binary.BigEndian.PutUint32(raw[12:16], uint32(len(meta)))
@@ -82,12 +82,12 @@ func rawFrame(kind MessageType, id uint32, meta, body []byte) []byte {
 }
 
 func TestHeaderValidation(t *testing.T) {
-	valid := rawFrame(Hello, 0, []byte(`{"versions":[1]}`), nil)
+	valid := rawFrame(Hello, 0, []byte(`{"versions":[2]}`), nil)
 	cases := []struct {
 		name   string
 		offset int
 		value  byte
-	}{{"magic", 0, 'X'}, {"version", 4, 2}, {"flags", 7, 1}, {"type", 5, 255}}
+	}{{"magic", 0, 'X'}, {"version", 4, 1}, {"flags", 7, 1}, {"type", 5, 255}}
 	for _, testcase := range cases {
 		t.Run(testcase.name, func(t *testing.T) {
 			raw := bytes.Clone(valid)
@@ -150,7 +150,7 @@ func TestEveryTruncatedFrameFails(t *testing.T) {
 }
 
 func FuzzReadFrame(f *testing.F) {
-	f.Add(rawFrame(Hello, 0, []byte(`{"versions":[1]}`), nil))
+	f.Add(rawFrame(Hello, 0, []byte(`{"versions":[2]}`), nil))
 	f.Add(rawFrame(Data, 7, []byte(`{}`), []byte("test")))
 	f.Fuzz(func(t *testing.T, raw []byte) {
 		frame, err := ReadFrame(bytes.NewReader(raw))
@@ -169,4 +169,33 @@ func FuzzReadFrame(f *testing.F) {
 			t.Fatal("roundtrip changed frame")
 		}
 	})
+}
+
+func TestRemoteErrorTextLimits(t *testing.T) {
+	for _, remote := range []*RemoteError{
+		{"NOT_FOUND", "resource unavailable"},
+		{"A_2", ""},
+		{"INTERNAL_ERROR", strings.Repeat("\u00e9", 512)},
+	} {
+		if err := ValidateRemoteError(remote); err != nil {
+			t.Fatal(err)
+		}
+		if remote.Error() != remote.Code+": "+remote.Message {
+			t.Fatal("valid message changed")
+		}
+	}
+	for _, remote := range []*RemoteError{
+		nil, {"", "empty"}, {"not_found", "lowercase"}, {"2BAD", "leading digit"},
+		{strings.Repeat("A", 65), "long code"}, {"BAD\x1b", "escape"},
+		{"BAD", strings.Repeat("\u00e9", 513)}, {"BAD", "\xff"},
+		{"BAD", "line\nbreak"}, {"BAD", "\x1b[2J"}, {"BAD", "\u0085"},
+		{"BAD", "\u202e"}, {"BAD", "\u2028"}, {"BAD", "\u2029"},
+	} {
+		if ValidateRemoteError(remote) == nil {
+			t.Fatal("accepted invalid remote error")
+		}
+		if remote.Error() != "invalid remote error" {
+			t.Fatal("unsafe error leaked")
+		}
+	}
 }

@@ -14,11 +14,18 @@ import (
 )
 
 type Server struct {
-	Authority      string
-	TLSConfig      *tls.Config
-	Handler        Handler
-	Timeout        time.Duration
-	MaxConnections int
+	Authority             string
+	TLSConfig             *tls.Config
+	Handler               Handler
+	Timeout               time.Duration
+	MaxConnections        int
+	MaxConnectionsPerPeer int
+	MaxRequestsPerSession uint32
+	MaxBytes              int64
+	RequestsPerMinute     int
+	HandshakeTimeout      time.Duration
+	IdleTimeout           time.Duration
+	SessionTimeout        time.Duration
 }
 
 // Serve accepts raw reliable connections and authenticates the DEEP TLS profile.
@@ -30,20 +37,25 @@ func (s *Server) Serve(ctx context.Context, listener net.Listener) error {
 	if s.TLSConfig == nil || s.Handler == nil {
 		return errors.New("server requires TLS identity and resource handler")
 	}
-	timeout := s.Timeout
-	if timeout <= 0 {
-		timeout = 30 * time.Second
+	configured, err := s.configured()
+	if err != nil {
+		return err
 	}
-	maximum := s.MaxConnections
-	if maximum <= 0 {
-		maximum = 64
+	s = &configured
+	if len(s.TLSConfig.Certificates) != 1 {
+		return errors.New("server requires exactly one static identity")
 	}
+	if err := ValidateServerIdentity(s.TLSConfig.Certificates[0], s.Authority); err != nil {
+		return err
+	}
+	s.TLSConfig = s.TLSConfig.Clone()
+	peers := newPeerLimiter(s.MaxConnectionsPerPeer, s.RequestsPerMinute)
 	ctx, cancel := context.WithCancel(ctx)
 	var workers sync.WaitGroup
 	defer func() { cancel(); listener.Close(); workers.Wait() }()
 	stop := context.AfterFunc(ctx, func() { listener.Close() })
 	defer stop()
-	capacity := make(chan struct{}, maximum)
+	capacity := make(chan struct{}, s.MaxConnections)
 	for {
 		connection, err := listener.Accept()
 		if err != nil {
@@ -52,27 +64,38 @@ func (s *Server) Serve(ctx context.Context, listener net.Listener) error {
 			}
 			return err
 		}
+		key := peerKey(connection.RemoteAddr())
+		if !peers.acquire(key, time.Now()) {
+			connection.Close()
+			continue
+		}
 		select {
 		case capacity <- struct{}{}:
 			workers.Add(1)
 			go func() {
 				defer workers.Done()
-				defer func() { <-capacity }()
-				s.serveConnection(ctx, connection, timeout)
+				defer func() { <-capacity; peers.release(key) }()
+				s.serveConnection(ctx, connection, peers, key)
 			}()
 		default:
+			peers.release(key)
 			connection.Close()
 		}
 	}
 }
 
-func (s *Server) serveConnection(ctx context.Context, raw net.Conn, timeout time.Duration) {
+func (s *Server) serveConnection(ctx context.Context, raw net.Conn, peers *peerLimiter, peer string) {
+	ctx, endSession := context.WithTimeout(ctx, s.SessionTimeout)
+	defer endSession()
 	defer raw.Close()
 	stop := context.AfterFunc(ctx, func() { raw.Close() })
 	defer stop()
 	connection := tls.Server(raw, s.TLSConfig)
-	handshakeCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	_ = setDeadline(connection, handshakeCtx, 5*time.Second)
+	handshakeCtx, cancel := context.WithTimeout(ctx, s.HandshakeTimeout)
+	if err := setDeadline(connection, handshakeCtx, s.HandshakeTimeout); err != nil {
+		cancel()
+		return
+	}
 	err := connection.HandshakeContext(handshakeCtx)
 	cancel()
 	if err != nil {
@@ -81,7 +104,9 @@ func (s *Server) serveConnection(ctx context.Context, raw net.Conn, timeout time
 	if _, err := InspectSecurity(connection.ConnectionState()); err != nil {
 		return
 	}
-	_ = setDeadline(connection, ctx, timeout)
+	if err := setDeadline(connection, ctx, s.IdleTimeout); err != nil {
+		return
+	}
 	frame, err := ReadFrame(connection)
 	if err != nil {
 		return
@@ -107,16 +132,19 @@ func (s *Server) serveConnection(ctx context.Context, raw net.Conn, timeout time
 		}
 		seen[version] = true
 	}
-	if !seen[1] {
+	if !seen[ProtocolVersion] {
 		sendError(connection, 0, &RemoteError{"UNSUPPORTED_VERSION", "no common application version"})
 		return
 	}
-	if err := send(connection, Welcome, 0, welcomeMetadata{1, MaxChunkSize}, nil); err != nil {
+	if err := send(connection, Welcome, 0, welcomeMetadata{ProtocolVersion, MaxChunkSize}, nil); err != nil {
 		return
 	}
 	var lastID uint32
+	var requestCount uint32
 	for {
-		_ = setDeadline(connection, ctx, timeout)
+		if err := setDeadline(connection, ctx, s.IdleTimeout); err != nil {
+			return
+		}
 		frame, err := ReadFrame(connection)
 		if err != nil {
 			return
@@ -146,15 +174,27 @@ func (s *Server) serveConnection(ctx context.Context, raw net.Conn, timeout time
 			return
 		}
 		if request.Operation != "FETCH" {
-			sendError(connection, lastID, &RemoteError{"UNSUPPORTED_OPERATION", "only FETCH is supported in V1"})
+			sendError(connection, lastID, &RemoteError{"UNSUPPORTED_OPERATION", "only FETCH is supported in V2"})
 			return
 		}
 		if err := ValidateResource(request.Path, request.Query); err != nil {
 			sendError(connection, lastID, protocolError("invalid resource"))
 			return
 		}
-		transferCtx, cancel := context.WithTimeout(ctx, timeout)
-		_ = setDeadline(connection, transferCtx, timeout)
+		if requestCount >= s.MaxRequestsPerSession {
+			sendError(connection, lastID, &RemoteError{"SESSION_LIMIT", "session request limit reached; open a new connection"})
+			return
+		}
+		if !peers.allowRequest(peer, time.Now()) {
+			sendError(connection, lastID, &RemoteError{"RATE_LIMITED", "peer request rate limit reached"})
+			return
+		}
+		requestCount++
+		transferCtx, cancel := context.WithTimeout(ctx, s.Timeout)
+		if err := setDeadline(connection, transferCtx, s.Timeout); err != nil {
+			cancel()
+			return
+		}
 		err = s.transfer(transferCtx, connection, lastID, request)
 		cancel()
 		if err != nil {
@@ -177,6 +217,9 @@ func (s *Server) transfer(ctx context.Context, connection net.Conn, id uint32, r
 	defer stop()
 	if resource.Size < 0 || resource.Size > MaxResourceSize || !validateMediaType(resource.MediaType) {
 		return errors.New("invalid resource from provider")
+	}
+	if resource.Size > s.MaxBytes {
+		return &RemoteError{"TOO_LARGE", "resource exceeds the server limit"}
 	}
 	if err := send(connection, Response, id, responseMetadata{resource.MediaType, resource.Size}, nil); err != nil {
 		return err
@@ -217,9 +260,11 @@ func sendError(writer net.Conn, id uint32, cause error) {
 		remote = &RemoteError{"PROTOCOL_ERROR", "invalid DEEP message"}
 	}
 	var specified *RemoteError
-	if errors.As(cause, &specified) {
+	if errors.As(cause, &specified) && ValidateRemoteError(specified) == nil {
 		remote = specified
 	}
-	_ = writer.SetWriteDeadline(time.Now().Add(time.Second))
+	if err := writer.SetWriteDeadline(time.Now().Add(time.Second)); err != nil {
+		return
+	}
 	_ = send(writer, Error, id, remote, nil)
 }

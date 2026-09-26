@@ -1,8 +1,9 @@
+> Historical V1 results. See [V2 validation](VALIDATION-V2.md) for the current release.
+
 # DEEP V1 validation
 
 Local run: September 24, 2026, Windows amd64, Go 1.27.0.
-The declared minimum API version is Go 1.25. The earlier Python version is retained
-in `legacy/python-v0.1` and is not part of the V1 tests.
+The declared minimum API version is Go 1.25. The earlier Python version did not participate in the V1 tests and is no longer part of the current source tree.
 
 ## Results
 

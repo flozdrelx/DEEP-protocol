@@ -125,7 +125,7 @@ func TestEndpointValidation(t *testing.T) {
 
 func TestLoadRegistry(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "networks.json")
-	valid := fmt.Sprintf(`{"version":1,"networks":{"alpha":{"adapter":"static","endpoints":{"node.alpha":{"address":"127.0.0.1:9761","pin_sha256":%q}}},"beta":{"adapter":"static","endpoints":{"node.beta":{"address":"127.0.0.1:9762","pin_sha256":%q}}}}}`, adapterTestPin, adapterTestPin)
+	valid := fmt.Sprintf(`{"version":2,"networks":{"alpha":{"adapter":"static","endpoints":{"node.alpha":{"address":"127.0.0.1:9761","pin_sha256":%q}}},"beta":{"adapter":"static","endpoints":{"node.beta":{"address":"127.0.0.1:9762","pin_sha256":%q}}}}}`, adapterTestPin, adapterTestPin)
 	if err := os.WriteFile(path, []byte(valid), 0600); err != nil {
 		t.Fatal(err)
 	}
@@ -139,21 +139,21 @@ func TestLoadRegistry(t *testing.T) {
 		}
 	}
 	invalid := []string{
-		`{}`, `null`, `[]`, `{"version":2,"networks":{}}`,
-		`{"version":1,"networks":{}}`,
-		`{"version":1,"version":1,"networks":{}}`,
-		`{"version":1,"Version":1,"networks":{}}`,
-		valid + `{}`, strings.Replace(valid, `"version":1`, `"version":1,"unknown":true`, 1),
+		`{}`, `null`, `[]`, `{"version":1,"networks":{}}`,
+		`{"version":2,"networks":{}}`,
+		`{"version":2,"version":2,"networks":{}}`,
+		`{"version":2,"Version":2,"networks":{}}`,
+		valid + `{}`, strings.Replace(valid, `"version":2`, `"version":2,"unknown":true`, 1),
 		strings.Replace(valid, `"adapter":"static"`, `"adapter":"http"`, 1),
 		strings.Replace(valid, `"node.alpha"`, `"node.beta"`, 1),
 		strings.Replace(valid, `"node.alpha"`, `"NODE.alpha"`, 1),
 		strings.Replace(valid, `"address":"127.0.0.1:9761"`, `"address":"127.0.0.1:9761","address":"evil:9761"`, 1),
 		strings.Replace(valid, `"address":"127.0.0.1:9761"`, `"address":"127.0.0.1:9761","extra":true`, 1),
 		strings.Replace(valid, `"adapter":"static"`, `"adapter":"static","command":["anything"]`, 1),
-		`{"version":1,"networks":{"alpha":{"adapter":"static"}}}`,
-		`{"version":1,"networks":{"alpha":{"adapter":"exec","command":[]}}}`,
-		`{"version":1,"networks":{"alpha":{"adapter":"exec","command":["x"],"endpoints":{}}}}`,
-		`{"version":1,"networks":{"alpha":{"adapter":"static","endpoints":{}},"alpha":{"adapter":"static","endpoints":{}}}}`,
+		`{"version":2,"networks":{"alpha":{"adapter":"static"}}}`,
+		`{"version":2,"networks":{"alpha":{"adapter":"exec","command":[]}}}`,
+		`{"version":2,"networks":{"alpha":{"adapter":"exec","command":["x"],"endpoints":{}}}}`,
+		`{"version":2,"networks":{"alpha":{"adapter":"static","endpoints":{}},"alpha":{"adapter":"static","endpoints":{}}}}`,
 	}
 	for index, data := range invalid {
 		t.Run(fmt.Sprintf("invalid-%d", index), func(t *testing.T) {
@@ -223,7 +223,7 @@ func TestLoadExecAdapterWorkingDirectory(t *testing.T) {
 	t.Setenv("DEEP_ADAPTER_TEST_HELPER", "1")
 	directory := t.TempDir()
 	command := helperCommand(t, "cwd", directory)
-	config := registryFile{Version: 1, Networks: map[string]networkFile{"alpha": {Adapter: "exec", Command: command}}}
+	config := registryFile{Version: ProtocolVersion, Networks: map[string]networkFile{"alpha": {Adapter: "exec", Command: command}}}
 	data, err := json.Marshal(config)
 	if err != nil {
 		t.Fatal(err)
@@ -263,7 +263,7 @@ func TestExecAdapterHelper(t *testing.T) {
 	}
 	decoder := json.NewDecoder(os.Stdin)
 	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&request); err != nil || request.Version != 1 || request.Authority != "node.alpha" {
+	if err := decoder.Decode(&request); err != nil || request.Version != ProtocolVersion || request.Authority != "node.alpha" {
 		os.Exit(3)
 	}
 	switch os.Args[separator+1] {
@@ -299,4 +299,101 @@ func TestExecAdapterHelper(t *testing.T) {
 		os.Exit(6)
 	}
 	os.Exit(0)
+}
+
+func TestConfigJSONRejectsAmbiguousValues(t *testing.T) {
+	type nested struct {
+		Name string `json:"name"`
+	}
+	type config struct {
+		Name   string   `json:"name"`
+		Nested *nested  `json:"nested,omitempty"`
+		Args   []string `json:"args,omitempty"`
+	}
+	for _, input := range []string{
+		`{"name":"valid"}`, `{"name":"valid","nested":{"name":"child"},"args":["","\ud83d\ude00"]}`,
+	} {
+		var result config
+		if err := DecodeConfigJSON([]byte(input), &result); err != nil {
+			t.Fatalf("valid input: %v", err)
+		}
+	}
+	for _, input := range []string{
+		`null`, `[]`, `{}`, `{"Name":"wrong case"}`, `{"name":"x","NAME":"y"}`,
+		`{"name":"x","name":"y"}`, `{"name":"x","extra":true}`, `{"name":null}`,
+		`{"name":"x","nested":null}`, `{"name":"x","nested":{}}`,
+		`{"name":"x","args":[null]}`, `{"name":"x","args":[123]}`,
+		`{"name":"\ud800"}`, `{"name":"\udfff"}`, `{"name":"x"}{}`,
+		"{\"name\":\"\xff\"}",
+	} {
+		var result config
+		if err := DecodeConfigJSON([]byte(input), &result); err == nil {
+			t.Fatalf("accepted invalid JSON: %q", input)
+		}
+	}
+}
+
+func TestClientIdentityConfiguration(t *testing.T) {
+	directory := t.TempDir()
+	path := filepath.Join(directory, "client.json")
+	cert, key, _, err := GenerateClientIdentity("client.alpha", time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, content := range map[string][]byte{"client.crt": cert, "client.key": key} {
+		if err := os.WriteFile(filepath.Join(directory, name), content, 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	config := fmt.Sprintf(`{"version":2,"networks":{"alpha":{"adapter":"static","endpoints":{"node.alpha":{"address":"127.0.0.1:9761","pin_sha256":%q}}}},"client_identity":{"certificate":"client.crt","private_key":"client.key"}}`, adapterTestPin)
+	if err := os.WriteFile(path, []byte(config), 0600); err != nil {
+		t.Fatal(err)
+	}
+	client, err := LoadClientConfig(path)
+	if err != nil || client.Identity == nil {
+		t.Fatalf("client identity: %v", err)
+	}
+	if err := ValidateClientIdentity(*client.Identity); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.Registry.Resolve(context.Background(), "node.alpha"); err != nil {
+		t.Fatal(err)
+	}
+	for _, identity := range []string{`null`, `{}`, `{"certificate":"client.crt"}`, `{"certificate":"","private_key":"client.key"}`, `{"certificate":"client.crt","private_key":null}`, `{"certificate":"client.crt","private_key":"secret\n.key"}`, `{"certificate":"client.crt","private_key":"secret\u202e.key"}`} {
+		bad := config[:strings.Index(config, `"client_identity":`)] + `"client_identity":` + identity + `}`
+		if err := os.WriteFile(path, []byte(bad), 0600); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := LoadRegistry(path); err == nil {
+			t.Fatalf("accepted invalid identity %s", identity)
+		}
+	}
+	missing := strings.Replace(config, `"client.key"`, `"missing.key"`, 1)
+	if err := os.WriteFile(path, []byte(missing), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := LoadRegistry(path); err != nil {
+		t.Fatalf("registry should only validate identity shape: %v", err)
+	}
+	if _, err := LoadClientConfig(path); err == nil {
+		t.Fatal("missing private key accepted")
+	} else if strings.Contains(err.Error(), "missing.key") || strings.Contains(err.Error(), directory) {
+		t.Fatal("private identity path leaked into diagnostic")
+	}
+	serverCert, serverKey, _, err := GenerateIdentity("node.alpha", time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(directory, "client.crt"), serverCert, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(directory, "client.key"), serverKey, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(config), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := LoadClientConfig(path); err == nil {
+		t.Fatal("server identity accepted for client role")
+	}
 }

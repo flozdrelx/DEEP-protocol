@@ -31,7 +31,7 @@ if (Test-Path -LiteralPath $schemeKey) {
         $existingCommand = (Get-Item -LiteralPath $commandKey).GetValue('')
     }
     if ($existingCommand -ne $command -and -not $ReplaceExisting) {
-        throw 'deep:// already has another handler. Use -ReplaceExisting to explicitly replace it with DEEP V1.'
+        throw 'deep:// already has another handler. Use -ReplaceExisting to explicitly replace it with DEEP V2.'
     }
 }
 [void](New-Item -Path $schemeKey -Force)

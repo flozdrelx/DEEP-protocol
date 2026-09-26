@@ -64,18 +64,44 @@ func (h *FileHandler) Open(ctx context.Context, path, query string) (Resource, e
 			}
 		}
 	}
-	file, err := h.root.Open(filepath.FromSlash(strings.TrimPrefix(decoded, "/")))
+	name := filepath.FromSlash(strings.TrimPrefix(decoded, "/"))
+	// The served tree is operator-controlled. Reject observed symlinks and
+	// special files; os.Root additionally prevents traversal outside the root.
+	components := strings.Split(strings.TrimPrefix(decoded, "/"), "/")
+	var before os.FileInfo
+	for index := range components {
+		if err := ctx.Err(); err != nil {
+			return Resource{}, err
+		}
+		prefix := filepath.Join(components[:index+1]...)
+		info, err := h.root.Lstat(prefix)
+		if err != nil || info.Mode()&os.ModeSymlink != 0 {
+			return Resource{}, &RemoteError{"NOT_FOUND", "resource is unavailable"}
+		}
+		if index < len(components)-1 && !info.IsDir() {
+			return Resource{}, &RemoteError{"NOT_FOUND", "resource is unavailable"}
+		}
+		before = info
+	}
+	if before == nil || !before.Mode().IsRegular() {
+		return Resource{}, &RemoteError{"NOT_FOUND", "resource is not a regular file"}
+	}
+	file, err := openResourceFile(h.root, name)
 	if err != nil {
 		return Resource{}, &RemoteError{"NOT_FOUND", "resource is unavailable"}
 	}
 	info, err := file.Stat()
-	if err != nil || !info.Mode().IsRegular() {
+	if err != nil || !info.Mode().IsRegular() || !os.SameFile(before, info) {
 		file.Close()
 		return Resource{}, &RemoteError{"NOT_FOUND", "resource is not a regular file"}
 	}
 	if info.Size() > MaxResourceSize {
 		file.Close()
 		return Resource{}, &RemoteError{"TOO_LARGE", "resource exceeds the protocol limit"}
+	}
+	if err := ctx.Err(); err != nil {
+		file.Close()
+		return Resource{}, err
 	}
 	mediaType := mime.TypeByExtension(filepath.Ext(decoded))
 	if mediaType == "" {

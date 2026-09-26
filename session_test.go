@@ -33,7 +33,7 @@ func startResourceServer(t *testing.T, authority string, handler Handler) Endpoi
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
-	server := &Server{Authority: authority, TLSConfig: ServerTLSConfig(identity), Handler: handler, Timeout: 5 * time.Second}
+	server := &Server{Authority: authority, TLSConfig: ServerTLSConfig(identity), Handler: handler, Timeout: 5 * time.Second, MaxConnectionsPerPeer: 64}
 	go func() { done <- server.Serve(ctx, listener) }()
 	t.Cleanup(func() {
 		cancel()

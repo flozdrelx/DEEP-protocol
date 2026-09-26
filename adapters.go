@@ -5,6 +5,7 @@ package deep
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -13,10 +14,13 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
+	"unicode"
+	"unicode/utf8"
 )
 
 // Endpoint binds an address to the exact server public key expected by a
@@ -188,7 +192,7 @@ func (adapter ExecAdapter) Resolve(ctx context.Context, authority string) (Endpo
 	request, err := json.Marshal(struct {
 		Version   int    `json:"version"`
 		Authority string `json:"authority"`
-	}{Version: 1, Authority: authority})
+	}{Version: ProtocolVersion, Authority: authority})
 	if err != nil {
 		return Endpoint{}, err
 	}
@@ -244,8 +248,14 @@ func (buffer *limitedBuffer) Bytes() []byte {
 }
 
 type registryFile struct {
-	Version  int                    `json:"version"`
-	Networks map[string]networkFile `json:"networks"`
+	Version        int                    `json:"version"`
+	Networks       map[string]networkFile `json:"networks"`
+	ClientIdentity *clientIdentityFile    `json:"client_identity,omitempty"`
+}
+
+type clientIdentityFile struct {
+	Certificate string `json:"certificate"`
+	PrivateKey  string `json:"private_key"`
 }
 
 type networkFile struct {
@@ -254,36 +264,97 @@ type networkFile struct {
 	Command   []string            `json:"command,omitempty"`
 }
 
-// LoadRegistry loads a strict version-1 adapter configuration. Relative resolver
-// paths and the resolver working directory are based on the configuration file.
+// LoadRegistry loads a strict version-2 adapter configuration. Optional client
+// identity paths are validated, but their files are loaded only by LoadClientConfig.
+// Resolver paths and working directories are relative to the configuration file.
 func LoadRegistry(path string) (*Registry, error) {
-	file, err := os.Open(path)
+	config, directory, err := loadRegistryConfig(path)
 	if err != nil {
 		return nil, err
+	}
+	return registryFromConfig(config, directory)
+}
+
+// LoadClientConfig loads trusted resolution settings and an optional TLS client
+// identity. Identity material is never passed to an executable resolver.
+func LoadClientConfig(path string) (*Client, error) {
+	config, directory, err := loadRegistryConfig(path)
+	if err != nil {
+		return nil, err
+	}
+	registry, err := registryFromConfig(config, directory)
+	if err != nil {
+		return nil, err
+	}
+	client := NewClient(registry)
+	if config.ClientIdentity != nil {
+		resolve := func(value string) string {
+			if filepath.IsAbs(value) {
+				return value
+			}
+			return filepath.Join(directory, value)
+		}
+		identity, err := tls.LoadX509KeyPair(resolve(config.ClientIdentity.Certificate), resolve(config.ClientIdentity.PrivateKey))
+		if err != nil {
+			return nil, fmt.Errorf("could not load client certificate/private key; check the configured files and matching key pair")
+		}
+		if err := ValidateClientIdentity(identity); err != nil {
+			return nil, fmt.Errorf("invalid client identity: %w", err)
+		}
+		client.Identity = &identity
+	}
+	return client, nil
+}
+
+func loadRegistryConfig(path string) (registryFile, string, error) {
+	var config registryFile
+	file, err := os.Open(path)
+	if err != nil {
+		return config, "", err
 	}
 	defer file.Close()
 	const maxConfigSize = 1024 * 1024
 	data, err := io.ReadAll(io.LimitReader(file, maxConfigSize+1))
 	if err != nil {
-		return nil, err
+		return config, "", err
 	}
 	if len(data) > maxConfigSize {
-		return nil, fmt.Errorf("adapter configuration exceeds 1 MiB")
+		return config, "", fmt.Errorf("adapter configuration exceeds 1 MiB")
 	}
-	var config registryFile
-	if err := decodeAdapterJSON(data, &config); err != nil {
-		return nil, fmt.Errorf("invalid adapter configuration: %w", err)
+	if err := DecodeConfigJSON(data, &config); err != nil {
+		return config, "", fmt.Errorf("invalid adapter configuration: %w", err)
 	}
-	if config.Version != 1 {
-		return nil, fmt.Errorf("adapter configuration version must be 1")
+	if config.Version != ProtocolVersion {
+		return config, "", fmt.Errorf("adapter configuration version must be %d", ProtocolVersion)
 	}
 	if len(config.Networks) == 0 {
-		return nil, fmt.Errorf("adapter configuration requires at least one network")
+		return config, "", fmt.Errorf("adapter configuration requires at least one network")
+	}
+	if identity := config.ClientIdentity; identity != nil {
+		if !validIdentityPath(identity.Certificate) || !validIdentityPath(identity.PrivateKey) {
+			return config, "", fmt.Errorf("client_identity requires certificate and private_key paths")
+		}
 	}
 	absolutePath, err := filepath.Abs(path)
 	if err != nil {
-		return nil, err
+		return config, "", err
 	}
+	return config, filepath.Dir(absolutePath), nil
+}
+
+func validIdentityPath(value string) bool {
+	if strings.TrimSpace(value) == "" {
+		return false
+	}
+	for _, c := range value {
+		if unicode.IsControl(c) || unicode.In(c, unicode.Cf, unicode.Zl, unicode.Zp) {
+			return false
+		}
+	}
+	return true
+}
+
+func registryFromConfig(config registryFile, directory string) (*Registry, error) {
 	registry := NewRegistry()
 	for network, config := range config.Networks {
 		var adapter NetworkAdapter
@@ -305,7 +376,7 @@ func LoadRegistry(path string) (*Registry, error) {
 			if len(config.Command) == 0 || strings.TrimSpace(config.Command[0]) == "" || config.Endpoints != nil {
 				return nil, fmt.Errorf("exec network %q requires command and forbids endpoints", network)
 			}
-			adapter = ExecAdapter{Command: config.Command, workDir: filepath.Dir(absolutePath)}
+			adapter = ExecAdapter{Command: config.Command, workDir: directory}
 		default:
 			return nil, fmt.Errorf("unsupported adapter %q for network %q", config.Adapter, network)
 		}
@@ -316,19 +387,117 @@ func LoadRegistry(path string) (*Registry, error) {
 	return registry, nil
 }
 
-// JSON duplicate keys are errors, including differently cased spellings which
-// encoding/json would otherwise map to the same struct field.
-func decodeAdapterJSON(data []byte, target any) error {
+// DecodeConfigJSON decodes one bounded UTF-8 JSON object into a plain Go
+// configuration struct. Struct field names are exact and case-sensitive; every
+// exported field is required unless tagged omitempty. Unknown fields, duplicate
+// keys, nulls (including array elements), and malformed Unicode are rejected.
+func DecodeConfigJSON(data []byte, target any) error {
+	if len(data) > 1024*1024 || !utf8.Valid(data) {
+		return fmt.Errorf("configuration exceeds 1 MiB or contains invalid UTF-8")
+	}
+	if err := validateSurrogates(data); err != nil {
+		return fmt.Errorf("invalid configuration Unicode: %w", err)
+	}
+	trimmed := bytes.TrimSpace(data)
+	if len(trimmed) < 2 || trimmed[0] != '{' {
+		return fmt.Errorf("expected exactly one JSON object")
+	}
 	tokens := json.NewDecoder(bytes.NewReader(data))
+	tokens.UseNumber()
 	if err := checkAdapterJSONValue(tokens, 0); err != nil {
 		return err
 	}
 	if _, err := tokens.Token(); err != io.EOF {
 		return fmt.Errorf("expected exactly one JSON object")
 	}
+	targetType := reflect.TypeOf(target)
+	if targetType == nil || targetType.Kind() != reflect.Pointer || reflect.ValueOf(target).IsNil() {
+		return fmt.Errorf("configuration destination must be a non-nil pointer")
+	}
+	var value any
 	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.UseNumber()
+	if err := decoder.Decode(&value); err != nil {
+		return err
+	}
+	if err := checkConfigShape(value, targetType.Elem()); err != nil {
+		return err
+	}
+	decoder = json.NewDecoder(bytes.NewReader(data))
 	decoder.DisallowUnknownFields()
 	return decoder.Decode(target)
+}
+
+func decodeAdapterJSON(data []byte, target any) error {
+	return DecodeConfigJSON(data, target)
+}
+
+func checkConfigShape(value any, target reflect.Type) error {
+	for target.Kind() == reflect.Pointer {
+		target = target.Elem()
+	}
+	switch target.Kind() {
+	case reflect.Struct:
+		object, ok := value.(map[string]any)
+		if !ok {
+			return fmt.Errorf("expected configuration object")
+		}
+		known := make(map[string]reflect.StructField)
+		for i := 0; i < target.NumField(); i++ {
+			field := target.Field(i)
+			if !field.IsExported() {
+				continue
+			}
+			tag := strings.Split(field.Tag.Get("json"), ",")
+			name := tag[0]
+			if name == "-" {
+				continue
+			}
+			if name == "" {
+				name = field.Name
+			}
+			known[name] = field
+			optional := false
+			for _, option := range tag[1:] {
+				if option == "omitempty" {
+					optional = true
+				}
+			}
+			if _, exists := object[name]; !exists && !optional {
+				return fmt.Errorf("missing configuration field %q", name)
+			}
+		}
+		for name, child := range object {
+			field, exists := known[name]
+			if !exists {
+				return fmt.Errorf("unknown configuration field %q", name)
+			}
+			if err := checkConfigShape(child, field.Type); err != nil {
+				return fmt.Errorf("field %q: %w", name, err)
+			}
+		}
+	case reflect.Map:
+		object, ok := value.(map[string]any)
+		if !ok {
+			return fmt.Errorf("expected configuration map")
+		}
+		for key, child := range object {
+			if err := checkConfigShape(child, target.Elem()); err != nil {
+				return fmt.Errorf("key %q: %w", key, err)
+			}
+		}
+	case reflect.Slice, reflect.Array:
+		array, ok := value.([]any)
+		if !ok {
+			return fmt.Errorf("expected configuration array")
+		}
+		for _, child := range array {
+			if err := checkConfigShape(child, target.Elem()); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 func checkAdapterJSONValue(decoder *json.Decoder, depth int) error {
@@ -339,12 +508,17 @@ func checkAdapterJSONValue(decoder *json.Decoder, depth int) error {
 	if err != nil {
 		return err
 	}
+	if token == nil {
+		return fmt.Errorf("null configuration values are forbidden")
+	}
 	delimiter, isDelimiter := token.(json.Delim)
 	if !isDelimiter {
 		return nil
 	}
+	var closing json.Delim
 	switch delimiter {
 	case '{':
+		closing = '}'
 		keys := make(map[string]bool)
 		for decoder.More() {
 			keyToken, err := decoder.Token()
@@ -355,16 +529,16 @@ func checkAdapterJSONValue(decoder *json.Decoder, depth int) error {
 			if !ok {
 				return fmt.Errorf("JSON object key must be a string")
 			}
-			canonicalKey := strings.ToLower(key)
-			if keys[canonicalKey] {
+			if keys[key] {
 				return fmt.Errorf("duplicate JSON key %q", key)
 			}
-			keys[canonicalKey] = true
+			keys[key] = true
 			if err := checkAdapterJSONValue(decoder, depth+1); err != nil {
 				return err
 			}
 		}
 	case '[':
+		closing = ']'
 		for decoder.More() {
 			if err := checkAdapterJSONValue(decoder, depth+1); err != nil {
 				return err
@@ -373,6 +547,12 @@ func checkAdapterJSONValue(decoder *json.Decoder, depth int) error {
 	default:
 		return fmt.Errorf("unexpected JSON delimiter")
 	}
-	_, err = decoder.Token()
-	return err
+	end, err := decoder.Token()
+	if err != nil {
+		return err
+	}
+	if end != closing {
+		return fmt.Errorf("invalid JSON container")
+	}
+	return nil
 }

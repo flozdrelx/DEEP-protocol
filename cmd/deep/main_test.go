@@ -113,7 +113,7 @@ func TestFetchFileFailureLeavesNoOutput(t *testing.T) {
 }
 
 func TestCommandVersionAndHelp(t *testing.T) {
-	for _, args := range [][]string{{}, {"--help"}, {"version"}, {"init", "--help"}, {"serve", "--help"}, {"fetch", "--help"}} {
+	for _, args := range [][]string{{}, {"--help"}, {"version"}, {"init", "--help"}, {"serve", "--help"}, {"fetch", "--help"}, {"client-init", "--help"}, {"inspect", "--help"}} {
 		var output bytes.Buffer
 		if err := run(context.Background(), args, &output, &output); err != nil {
 			t.Fatal(err)

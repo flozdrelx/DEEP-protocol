@@ -12,3 +12,8 @@ node-*/
 *.test
 *.exe
 coverage.out
+# Local identities, downloads, and release staging
+client-*/
+release/
+*.p12
+*.pfx
