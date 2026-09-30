@@ -1,6 +1,6 @@
 # DEEP V2 security
 
-DEEP 2.0.0 provides authenticated resource transfer with explicit trust configuration and bounded server operation. Security primitives come from Go's standard library. Use Go 1.27.1 or later and keep the toolchain patched when rebuilding.
+DEEP 2.2.0 provides authenticated resource transfer with explicit trust configuration and bounded server operation. Security primitives come from Go's standard library. Use Go 1.27.1 or later and keep the toolchain patched when rebuilding.
 
 This release has automated security and interoperability tests. It has not received an independent cryptographic or deployment audit. The exact checks performed locally are recorded in [Validation](docs/VALIDATION-V2.md).
 
@@ -61,7 +61,7 @@ Resource handlers must respect their context, and closing a resource body must u
 
 ## Remaining boundaries
 
-DEEP does not provide anonymous routing, traffic-analysis resistance, hidden SNI, automatic decentralized trust, per-resource user roles, uploads, browser origin isolation, or automatic signed updates. It does not hide network addresses, resource sizes, or timing. V1 identities and configurations are deliberately incompatible.
+DEEP does not provide anonymous routing, traffic-analysis resistance, hidden SNI, automatic decentralized trust, application user roles or automatic signed updates. It does not hide network addresses, resource sizes, or timing. V1 identities and configurations are deliberately incompatible.
 
 Release checksums alone do not authenticate the publisher. Obtain binaries and checksums from a trusted publication channel. Public repository hosting and a release-signing identity must be selected by the maintainer before publishing.
 
@@ -77,3 +77,32 @@ A public repository security contact has not yet been configured. Before publish
 - [NIST FIPS 204: ML-DSA](https://csrc.nist.gov/pubs/fips/204/final)
 - [TLS 1.3, RFC 8446](https://www.rfc-editor.org/rfc/rfc8446.html)
 - [Go Root confinement and limitations](https://pkg.go.dev/os#Root)
+
+## Optional Windows website viewer (2.1)
+
+The viewer uses the existing DEEP client and verifies complete resources before
+passing them to WebView2. Its browser origin policy, CSP, local/native access
+restrictions, limits, and unsupported features are documented in
+[the viewer guide](docs/VIEWER.md#security-and-limits). The graphical viewer adds
+the .NET and Microsoft WebView2 runtime dependencies. Keep them updated; the
+protocol's cryptographic guarantees do not imply that arbitrary website code
+is trustworthy or that the browser engine is free of vulnerabilities.
+
+## Optional application profile (2.2)
+
+app/1 allows bounded state-changing requests. The complete upload is verified
+before dispatch, but a lost response does not mean a write failed. Clients
+must not automatically retry writes. Application handlers own authentication,
+authorization, CSRF protection, and input validation.
+
+The optional HTTP provider connects only to its fixed numeric loopback target,
+ignores proxy environment variables, filters hop-by-hop/forwarded fields, and
+does not follow redirects. It buffers up to 16 MiB per response with eight
+upstream slots; request bodies are limited to 1 MiB. Publishing an application
+intentionally exposes that application's routes to authorized DEEP visitors.
+
+The viewer isolates cookie jars by exact authority and window and limits
+redirects to the same authority. Cookies are temporary and unavailable to
+document.cookie; browser credentials/SameSite modes are not fully emulated.
+The backend remains part of the trusted local environment. See
+[application boundaries](docs/APPLICATIONS.md) for the complete profile.

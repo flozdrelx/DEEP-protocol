@@ -44,6 +44,7 @@ func initNode(args []string, out, diagnostic io.Writer) (err error) {
 	authority := flags.String("authority", "", "Server identity in node.network format")
 	dir := flags.String("dir", "", "New protected directory for identity, content, and configuration")
 	address := flags.String("address", "127.0.0.1:9761", "host:port address for listening and connecting")
+	upstream := flags.String("upstream", "", "Optional loopback HTTP application URL; omits the content directory")
 	public := flags.Bool("public", false, "Explicitly allow clients without a client certificate")
 	proceed, err := parseFlags(flags, args)
 	if err != nil || !proceed {
@@ -66,6 +67,11 @@ func initNode(args []string, out, diagnostic io.Writer) (err error) {
 	if ip := net.ParseIP(host); ip != nil && ip.IsUnspecified() {
 		return errors.New("--address requires a specific address; you can later change listen in server.json to 0.0.0.0:port")
 	}
+	if *upstream != "" {
+		if err := deep.ValidateHTTPUpstream(*upstream); err != nil {
+			return err
+		}
+	}
 	target, err := filepath.Abs(*dir)
 	if err != nil {
 		return err
@@ -86,12 +92,18 @@ func initNode(args []string, out, diagnostic io.Writer) (err error) {
 			_ = os.RemoveAll(target)
 		}
 	}()
-	if err := os.Mkdir(filepath.Join(target, "content"), 0700); err != nil {
-		return err
+	if *upstream == "" {
+		if err := os.Mkdir(filepath.Join(target, "content"), 0700); err != nil {
+			return err
+		}
 	}
 	server := serverConfig{
 		Version: 2, Authority: *authority, Listen: *address, Root: "content",
 		Certificate: "identity.crt", PrivateKey: "identity.key", AccessMode: "private",
+	}
+	if *upstream != "" {
+		server.Root = ""
+		server.Upstream = *upstream
 	}
 	network := strings.Split(*authority, ".")[1]
 	client := map[string]any{
@@ -113,6 +125,9 @@ func initNode(args []string, out, diagnostic io.Writer) (err error) {
 		{"identity.crt", cert, 0644},
 		{"identity.key", key, 0600},
 		{filepath.Join("content", "index.txt"), []byte("Hello from deep://" + *authority + "/\nDEEP V2: native messages, hybrid post-quantum key exchange, and ML-DSA-65 authentication.\n"), 0644},
+	}
+	if *upstream != "" {
+		files = files[:2]
 	}
 	if *public {
 		server.AccessMode = "public"

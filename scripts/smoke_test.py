@@ -98,7 +98,7 @@ class RunningNode:
                         details = self.log_path.read_text(encoding="utf-8")[:2000]
                         raise SmokeError("server stopped during startup: " + details)
                     continue
-                match = re.fullmatch(r"DEEP 2\.0\.0 listening on (127\.0\.0\.1:[0-9]+) for deep://"
+                match = re.fullmatch(r"DEEP 2\.[0-9]+\.[0-9]+ listening on (127\.0\.0\.1:[0-9]+) for deep://"
                                      + re.escape(authority) + r"/\s*", line)
                 if match:
                     self.address = match.group(1)

@@ -1,5 +1,26 @@
 # Changelog
 
+## 2.2.0 — 2026-09-30
+
+- Add optional app/1 requests with methods, headers, verified bodies, response
+  statuses, and duplicate headers. Keep V2 FETCH and its security profile.
+- Add a bounded loopback HTTP provider and deep request stdin bridge.
+- Support website forms, redirects, and in-memory sessions in the Windows viewer.
+- Document limits and validate the Flask workflow through HellNet's port adapter.
+
+## 2.1.0 - September 29, 2026
+
+- Add the Windows DEEP website viewer with native deep:// resource loading,
+  navigation controls, and HTML/CSS/image/font/JavaScript support.
+- Keep the DEEP V2 wire format, authentication, and adapter contract unchanged.
+- Prefer index.html for directory URLs, with index.txt fallback; allow validated
+  static cache-busting queries and consistent browser MIME types.
+- Add browse and preview commands. Registered links use the graphical viewer
+  when installed; terminal-only installations retain escaped previews.
+- Enforce complete verification before rendering, same-origin resource loading,
+  browser permissions and content policies, and bounded resource fetching.
+- Add a sample website, renderer integration tests, and desktop build guidance.
+
 ## 2.0.0 - September 26, 2026
 
 First official DEEP release line.

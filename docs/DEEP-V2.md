@@ -2,7 +2,8 @@
 
 **Name:** Decentralized Extensible Endpoint Protocol.  
 **Application and framing version:** 2.  
-**Reference implementation:** 2.0.0.  
+**Reference implementation:** 2.2.0 (wire version remains 2).
+
 **Status:** official DEEP project release specification. No public Internet registration or external audit is implied.  
 **License:** Apache 2.0.
 
@@ -16,7 +17,7 @@ This document defines the requirements for independent implementations to exchan
 4. The **V2 TLS profile** authenticates the server and protects that stream.
 5. **DEEP messages** negotiate the version and transfer resources.
 
-V2 defines the `FETCH` operation: retrieving a finite resource of known size. Sessions support multiple sequential requests to the same authority. There are no uploads, remote modifications, notifications, multiplexing, download resumption, DEEP compression, or implicit global discovery. A resource can be any sequence of bytes; the application decides how to present it.
+V2 defines the `FETCH` operation: retrieving a finite resource of known size. Sessions support multiple sequential requests to the same authority. The base resource profile has no writes. The optional app/1 extension in DEEP 2.2 adds bounded application requests; see APPLICATIONS.md. Notifications, multiplexing, resumption, DEEP compression, and implicit global discovery remain undefined. A resource can be any sequence of bytes; the application decides how to present it.
 
 ## 2. Addresses
 
@@ -93,6 +94,9 @@ Only `DATA` carries a body; its length is 1 to 65536 bytes. All other types have
 | 7 | `ERROR` | 0 or active ID | `{"code":"NOT_FOUND","message":"resource is unavailable"}` |
 | 8 | `CLOSE` | 0 | `{}` |
 
+The optional app/1 profile adds CONTINUE (type 9, positive active request ID)
+and additional REQUEST/RESPONSE schemas as specified in [APPLICATIONS.md](APPLICATIONS.md).
+
 ### 5.1 Opening
 
 After completing TLS, the client sends `HELLO`. The `versions` list contains 1 to 16 distinct integers between 1 and 65535. A V2 server selects 2 if present and responds with `WELCOME`. `max_chunk` is exactly 65536 in V2. If there is no common version, the server sends `ERROR` with ID 0 and code `UNSUPPORTED_VERSION`, then closes.
@@ -103,7 +107,7 @@ Header version 2 remains mandatory during this negotiation. Including an unknown
 
 The client sends a `REQUEST` with an ID between 1 and 4294967295, strictly greater than all previous IDs on that connection. IDs are not reused and wraparound is not allowed; a new connection is opened when they are exhausted. Only one request can be active. The client MUST NOT send another `REQUEST` before the previous request's `END`; pipelining is not defined.
 
-`authority` must be the same canonical authority authenticated and served by that connection. `operation` is exactly `FETCH`. The path and query follow the URI rules; `query` is an empty string when there is no query. A fragment is not transmitted.
+`authority` must be the same canonical authority authenticated and served by that connection. `operation` is `FETCH` for this base resource conversation. The path and query follow the URI rules; `query` is an empty string when there is no query. A fragment is not transmitted.
 
 For a successful request, the server sends:
 
@@ -130,10 +134,10 @@ Reference implementation codes:
 | `PROTOCOL_ERROR` | Invalid message or sequence. |
 | `UNSUPPORTED_VERSION` | No common version. |
 | `UNKNOWN_AUTHORITY` | The server does not serve that authority. |
-| `UNSUPPORTED_OPERATION` | Operation other than FETCH. |
+| `UNSUPPORTED_OPERATION` | Operation not supported by this server/profile. |
 | `NOT_FOUND` | Resource unavailable. |
 | `BAD_RESOURCE` | Path rejected by the provider. |
-| `UNSUPPORTED_QUERY` | The file provider does not accept queries. |
+| `UNSUPPORTED_QUERY` | The selected provider does not accept queries (used by the 2.0 file provider). |
 | `TOO_LARGE` | Resource exceeds the configured or protocol limit. |
 | `RESOURCE_CHANGED` | Content does not match the announced size. |
 | `INTERNAL_ERROR` | Provider failure. |
@@ -192,7 +196,7 @@ The `exec` profile handles resolution. Custom transports integrate through the l
 
 The library provides `Handler.Open(ctx, path, query) (Resource, error)`. `Resource` contains a `Body` implementing `io.ReadCloser`, `MediaType`, and `Size`. The resource must be finite and return EOF after exactly `Size` bytes. `Open` MUST respect the context and `Body.Close` MUST unblock a pending read so that cancellation and server shutdown can complete.
 
-`FileHandler` interprets `/` as `/index.txt`, decodes escapes once, and confines access to its root. It rejects empty, hidden, or Windows-unsafe path components, nonempty queries, observed symlink components, and nonregular files. Unix opens are nonblocking to prevent FIFO stalls; opened file identity and type are checked before reads. The tree MUST be operator-controlled: observed-symlink checks are not a sandbox against hostile concurrent local writers, hard links, or mount points. This policy belongs to the file provider, not to all possible DEEP resources.
+FileHandler in 2.1 resolves directory URLs ending in / to index.html, then index.txt if no HTML entry exists. Version 2.0 used /index.txt only at the root. Version 2.1 validates but ignores query strings for static file selection; custom handlers still receive them. It decodes escapes once and confines access to its root. It rejects empty, hidden, or Windows-unsafe path components, observed symlink components, and nonregular files. Unix opens are nonblocking to prevent FIFO stalls; opened file identity and type are checked before reads. The tree MUST be operator-controlled: observed-symlink checks are not a sandbox against hostile concurrent local writers, hard links, or mount points. This policy belongs to the file provider, not to all possible DEEP resources.
 
 `Client.Fetch` opens and closes a session. `Client.Dial` returns a reusable `Session` for the same authority. Concurrent requests on one session are rejected with a local session-busy error; use separate sessions for concurrency. The destination `io.Writer` may have received data before an error: the caller MUST discard partial data. The CLI handles this with a temporary file when using `--output`.
 
@@ -226,3 +230,9 @@ The library name, language, file paths, and CLI commands are not protocol requir
 The shared [frame vectors](../interop/frame_vectors.json) specify exact framing examples independently consumed by Go and Python tests. They validate framing and JSON syntax, not every message-state rule.
 
 DEEP-specific URI, message, error, and adapter details are defined in this document and are not attributed to those references.
+
+## Optional application extension (DEEP 2.2)
+
+[app/1](APPLICATIONS.md) adds EXCHANGE and CONTINUE (frame type 9) for bounded
+application requests and responses. FETCH remains unchanged. The extension
+defines a second REQUEST schema after CONTINUE and an application RESPONSE.

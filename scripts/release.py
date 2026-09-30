@@ -62,10 +62,10 @@ def source_payloads():
     for name in ("go.mod", ".gitignore", "README.md", "SECURITY.md", "CHANGELOG.md",
                  "LICENSE", "NOTICE", "THIRD_PARTY_NOTICES"):
         payloads[name] = ((ROOT / name).read_bytes(), 0o644)
-    for directory in ("cmd", "scripts", "docs", "interop", ".github"):
+    for directory in ("cmd", "scripts", "docs", "interop", ".github", "viewer", "examples/website"):
         for path in sorted((ROOT / directory).rglob("*")):
-            if path.is_file() and "__pycache__" not in path.parts and path.suffix in {
-                ".go", ".py", ".ps1", ".md", ".json", ".yml", ".yaml"
+            if path.is_file() and not ({"__pycache__", "bin", "obj"} & set(path.relative_to(ROOT).parts)) and path.suffix in {
+                ".go", ".py", ".ps1", ".md", ".json", ".yml", ".yaml", ".cs", ".csproj", ".Config", ".html", ".css", ".js", ".svg"
             }:
                 payloads[path.relative_to(ROOT).as_posix()] = (path.read_bytes(), 0o644)
     return payloads
@@ -73,7 +73,7 @@ def source_payloads():
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--output", type=Path, default=ROOT / "dist" / "v2.0.0")
+    parser.add_argument("--output", type=Path, default=None)
     parser.add_argument("--targets", nargs="+", choices=TARGETS, default=TARGETS)
     args = parser.parse_args()
     if len(set(args.targets)) != len(args.targets):
@@ -83,7 +83,7 @@ def main():
     parsed = re.search(r"go(\d+)\.(\d+)(?:\.(\d+))?", toolchain)
     if not parsed or tuple(int(n or 0) for n in parsed.groups()) < (1, 27, 1):
         parser.error("Go 1.27.1 or newer is required")
-    args.output = args.output.resolve()
+    args.output = (args.output or ROOT / "dist" / ("v" + version)).resolve()
     # Exclusive directory creation prevents overwriting a previous release.
     args.output.mkdir(parents=True, exist_ok=False)
     manifest = {"version": version, "toolchain": toolchain, "targets": [],

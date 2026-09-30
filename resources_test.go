@@ -42,8 +42,10 @@ func TestFileHandlerPaths(t *testing.T) {
 			t.Errorf("accepted unsafe/missing file %s", path)
 		}
 	}
-	if _, err := handler.Open(context.Background(), "/", "query"); err == nil {
-		t.Fatal("ignored query")
+	if r, err := handler.Open(context.Background(), "/", "v=1"); err != nil {
+		t.Fatal(err)
+	} else {
+		r.Body.Close()
 	}
 	if err := os.WriteFile(filepath.Join(base, "secret"), []byte("secret"), 0600); err != nil {
 		t.Fatal(err)

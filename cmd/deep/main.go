@@ -30,13 +30,17 @@ Usage:
   deep inspect --certificate node-alpha/identity.crt
   deep serve --config node-alpha/server.json
   deep fetch deep://node.alpha/ --config node-alpha/client.json [--output file] [--info]
+  deep request deep://node.alpha/ --config client.json --info < request.json
+  deep browse [deep://node.alpha/] [--config client.json]
+  deep preview deep://node.alpha/ [--config client.json]
   deep open-uri deep://node.alpha/
 
 init creates a private node and an authorized client in a protected new directory.
 Use init --public only for a node intended to accept unauthenticated clients.
 fetch streams the resource to stdout or saves a verified file without overwriting.
 --info writes transfer details and negotiated security information to stderr.
-open-uri uses config.json beside the executable and accepts exactly one URI.
+browse opens the Windows website viewer; preview displays escaped terminal text.
+open-uri launches the viewer using config.json beside the executable.
 Connections require TLS 1.3, X25519MLKEM768, and a pinned ML-DSA-65 server key.
 Private nodes additionally require an authorized ML-DSA-65 client certificate.
 `
@@ -73,6 +77,8 @@ func run(ctx context.Context, args []string, out, diagnostic io.Writer) error {
 		return inspectCertificate(args[1:], out, diagnostic)
 	case "serve":
 		return serveNode(ctx, args[1:], out, diagnostic)
+	case "request":
+		return requestResource(ctx, args[1:], os.Stdin, out, diagnostic)
 	case "fetch":
 		return fetchResource(ctx, args[1:], out, diagnostic)
 	case "demo":
@@ -80,6 +86,10 @@ func run(ctx context.Context, args []string, out, diagnostic io.Writer) error {
 			return errors.New("demo does not accept arguments")
 		}
 		return demo(ctx, out)
+	case "browse":
+		return browseURI(ctx, args[1:], diagnostic)
+	case "preview":
+		return previewCommand(ctx, args[1:], out, diagnostic)
 	case "open-uri":
 		return openURI(ctx, args[1:], out, diagnostic)
 	default:
@@ -199,6 +209,9 @@ func openURI(ctx context.Context, args []string, out, diagnostic io.Writer) erro
 	executable, err := os.Executable()
 	if err != nil {
 		return err
+	}
+	if viewerAvailable(executable) {
+		return launchViewer(ctx, executable, args[0], filepath.Join(filepath.Dir(executable), "config.json"))
 	}
 	err = previewURI(ctx, args[0], filepath.Join(filepath.Dir(executable), "config.json"), out, diagnostic)
 	if err != nil {

@@ -10,20 +10,19 @@
 - Independent shared framing vectors and a Python TLS interoperability probe.
 - English documentation, Apache 2.0 licensing, migration and operations guidance, CI, and local release tooling.
 
-## Next: HellNet adapter
+## Delivered integrations and viewer
 
-Integrate HellNet as a consumer of DEEP's adapter and transport APIs. Keep HellNet-specific
-discovery, naming, and trust distribution in its own package. Establish which endpoints
-are public or private, how server pins are authenticated, and how client access is managed.
-Test it against the same V2 conformance and security rules as every other network.
+- HellNet consumes DEEP through an independent resolver and encrypted-byte relay.
+- Windows WebView2 viewer with DEEP origins, verified resources, and bounded access.
+- DEEP 2.2 app/1 and HellNet 3.1 port hosting for forms and temporary sessions.
 
 ## Later work
 
 1. Independent complete implementations in other languages and long-running multi-host testing.
 2. Authenticated distributed resolution, bootstrapping, collision policy, and signed discovery records defined by each network.
 3. Live key rotation/revocation, scalable authorization, and clearer administrative tooling.
-4. Uploads, multiplexing, resumption, or other operations only through a specified and tested protocol evolution.
-5. A visual client with a defined origin, permission, and content-execution model before active HTML or scripts.
+4. Streaming, multiplexing, resumption, and larger uploads through further protocol evolution.
+5. Broader browser compatibility, persistent sessions, and additional viewer platforms.
 6. Public repository hosting, private vulnerability reporting, release signing, and reproducible-build comparisons.
 7. Independent security review, prolonged fuzzing, performance measurements, and operational experience.
 8. Public URI/ALPN registration when the project is ready for that process.

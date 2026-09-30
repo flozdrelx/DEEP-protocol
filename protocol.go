@@ -13,7 +13,7 @@ import (
 	"unicode/utf8"
 )
 
-const Version = "2.0.0"
+const Version = "2.2.0"
 const ProtocolVersion = 2
 const HeaderSize = 20
 const MaxMetadataSize = 8192
@@ -31,6 +31,7 @@ const (
 	End
 	Error
 	Close
+	Continue // app/1 upload acceptance; sent only after an EXCHANGE request.
 )
 
 var ErrProtocol = errors.New("DEEP protocol error")
@@ -45,7 +46,7 @@ type Frame struct {
 func protocolError(message string) error { return fmt.Errorf("%w: %s", ErrProtocol, message) }
 
 func validateHeader(kind MessageType, id, metaSize, bodySize uint32) error {
-	if kind < Hello || kind > Close {
+	if kind < Hello || kind > Continue {
 		return protocolError("unknown message type")
 	}
 	if metaSize < 2 || metaSize > MaxMetadataSize || bodySize > MaxChunkSize {
@@ -60,7 +61,7 @@ func validateHeader(kind MessageType, id, metaSize, bodySize uint32) error {
 	if (kind == Hello || kind == Welcome || kind == Close) && id != 0 {
 		return protocolError("control message with request ID")
 	}
-	if kind >= Request && kind <= End && id == 0 {
+	if ((kind >= Request && kind <= End) || kind == Continue) && id == 0 {
 		return protocolError("resource message without request ID")
 	}
 	return nil

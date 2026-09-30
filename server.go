@@ -173,8 +173,8 @@ func (s *Server) serveConnection(ctx context.Context, raw net.Conn, peers *peerL
 			sendError(connection, lastID, &RemoteError{"UNKNOWN_AUTHORITY", "this server does not serve that authority"})
 			return
 		}
-		if request.Operation != "FETCH" {
-			sendError(connection, lastID, &RemoteError{"UNSUPPORTED_OPERATION", "only FETCH is supported in V2"})
+		if request.Operation != "FETCH" && request.Operation != "EXCHANGE" {
+			sendError(connection, lastID, &RemoteError{"UNSUPPORTED_OPERATION", "this operation is not supported"})
 			return
 		}
 		if err := ValidateResource(request.Path, request.Query); err != nil {
@@ -195,7 +195,11 @@ func (s *Server) serveConnection(ctx context.Context, raw net.Conn, peers *peerL
 			cancel()
 			return
 		}
-		err = s.transfer(transferCtx, connection, lastID, request)
+		if request.Operation == "EXCHANGE" {
+			err = s.exchange(transferCtx, connection, lastID, request)
+		} else {
+			err = s.transfer(transferCtx, connection, lastID, request)
+		}
 		cancel()
 		if err != nil {
 			sendError(connection, lastID, err)

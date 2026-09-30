@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 [CmdletBinding()]
-param()
+param([switch]$WithViewer)
 
 $ErrorActionPreference = 'Stop'
 $projectRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
@@ -17,6 +17,7 @@ try {
         throw 'DEEP build failed.'
     }
     Write-Host "DEEP built: $outputExecutable"
+    if ($WithViewer) { & (Join-Path $PSScriptRoot 'build-viewer.ps1') }
 } finally {
     Pop-Location
 }

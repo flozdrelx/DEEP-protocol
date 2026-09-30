@@ -24,13 +24,18 @@ if (-not (Test-Path -LiteralPath $configuration -PathType Leaf)) {
 }
 $schemeKey = 'HKCU:\Software\Classes\deep'
 $commandKey = Join-Path $schemeKey 'shell\open\command'
-$command = '"' + $resolvedExecutable + '" open-uri "%1"'
+$terminalCommand = '"' + $resolvedExecutable + '" open-uri "%1"'
+$viewer = Join-Path ([IO.Path]::GetDirectoryName($resolvedExecutable)) 'viewer/DEEP.Viewer.exe'
+$command = $terminalCommand
+if (Test-Path -LiteralPath $viewer -PathType Leaf) {
+    $command = '"' + $viewer + '" --deep "' + $resolvedExecutable + '" --config "' + $configuration + '" --uri "%1"'
+}
 if (Test-Path -LiteralPath $schemeKey) {
     $existingCommand = $null
     if (Test-Path -LiteralPath $commandKey) {
         $existingCommand = (Get-Item -LiteralPath $commandKey).GetValue('')
     }
-    if ($existingCommand -ne $command -and -not $ReplaceExisting) {
+    if ($existingCommand -ne $command -and $existingCommand -ne $terminalCommand -and -not $ReplaceExisting) {
         throw 'deep:// already has another handler. Use -ReplaceExisting to explicitly replace it with DEEP V2.'
     }
 }

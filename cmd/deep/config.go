@@ -21,7 +21,8 @@ type serverConfig struct {
 	Version                 int      `json:"version"`
 	Authority               string   `json:"authority"`
 	Listen                  string   `json:"listen"`
-	Root                    string   `json:"root"`
+	Root                    string   `json:"root,omitempty"`
+	Upstream                string   `json:"upstream,omitempty"`
 	Certificate             string   `json:"certificate"`
 	PrivateKey              string   `json:"private_key"`
 	AccessMode              string   `json:"access_mode"`
@@ -57,8 +58,13 @@ func loadServerConfig(path string) (serverConfig, error) {
 	if config.Version != 2 {
 		return config, errors.New("DEEP V2 requires version 2 configuration and new ML-DSA-65 identities; see docs/MIGRATION-V2.md")
 	}
-	if config.Root == "" || config.Certificate == "" || config.PrivateKey == "" || config.Listen == "" {
-		return config, errors.New("root, certificate, private_key, and listen must not be empty")
+	if (config.Root == "") == (config.Upstream == "") || config.Certificate == "" || config.PrivateKey == "" || config.Listen == "" {
+		return config, errors.New("exactly one of root/upstream, plus certificate, private_key, and listen are required")
+	}
+	if config.Upstream != "" {
+		if err := deep.ValidateHTTPUpstream(config.Upstream); err != nil {
+			return config, err
+		}
 	}
 	if err := deep.ValidateAuthority(config.Authority); err != nil {
 		return config, err
@@ -129,7 +135,7 @@ func loadServerConfig(path string) (serverConfig, error) {
 	}
 	base := filepath.Dir(path)
 	for _, value := range []*string{&config.Root, &config.Certificate, &config.PrivateKey} {
-		if !filepath.IsAbs(*value) {
+		if *value != "" && !filepath.IsAbs(*value) {
 			*value = filepath.Join(base, *value)
 		}
 	}
@@ -145,6 +151,9 @@ func canonicalPath(path string) (string, error) {
 }
 
 func validateServingPaths(configPath string, config serverConfig) error {
+	if config.Upstream != "" {
+		return deep.ValidateHTTPUpstream(config.Upstream)
+	}
 	root, err := canonicalPath(config.Root)
 	if err != nil {
 		return fmt.Errorf("resolve content root: %w", err)
@@ -197,7 +206,15 @@ func serveNode(ctx context.Context, args []string, out, diagnostic io.Writer) er
 			return err
 		}
 	}
-	handler, err := deep.NewFileHandler(config.Root)
+	var handler interface {
+		deep.Handler
+		Close() error
+	}
+	if config.Upstream != "" {
+		handler, err = deep.NewHTTPHandler(config.Upstream, config.Authority)
+	} else {
+		handler, err = deep.NewFileHandler(config.Root)
+	}
 	if err != nil {
 		return err
 	}

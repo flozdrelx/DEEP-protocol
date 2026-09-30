@@ -29,3 +29,21 @@ THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
+
+Optional Windows website viewer (DEEP 2.1)
+----------------------------------------
+Microsoft.Web.WebView2 SDK 1.0.4258.31:
+https://www.nuget.org/packages/Microsoft.Web.WebView2/1.0.4258.31
+The portable viewer includes the SDK's LICENSE and NOTICE in bin/viewer/licenses.
+The separately installed Microsoft Edge WebView2 Runtime is governed by
+Microsoft's runtime terms and receives its own updates.
+
+The self-contained .NET 10 and Windows Desktop runtimes retain their Microsoft
+MIT license and third-party notices in bin/viewer/licenses. The build script
+copies notices from the exact restored runtime packages. Runtime versions are
+recorded in bin/viewer/DEEP.Viewer.runtimeconfig.json.
+Source: https://github.com/dotnet/runtime and https://github.com/dotnet/winforms
+
+The sample site's HTML, CSS, JavaScript and SVG are original DEEP project
+content under Apache-2.0. Test fonts are read temporarily from the local Windows
+installation; they are not part of the distribution.

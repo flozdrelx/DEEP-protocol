@@ -17,3 +17,9 @@ client-*/
 release/
 *.p12
 *.pfx
+
+# Desktop viewer build output and user profiles
+obj/
+*.user
+*.pdb
+*.WebView2/

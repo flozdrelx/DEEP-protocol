@@ -3,6 +3,7 @@ package deep
 
 import (
 	"context"
+	"errors"
 	"io"
 	"mime"
 	"net/url"
@@ -41,9 +42,6 @@ func (h *FileHandler) Open(ctx context.Context, path, query string) (Resource, e
 	if err := ctx.Err(); err != nil {
 		return Resource{}, err
 	}
-	if query != "" {
-		return Resource{}, &RemoteError{"UNSUPPORTED_QUERY", "file resources do not accept queries"}
-	}
 	if err := ValidateResource(path, query); err != nil {
 		return Resource{}, &RemoteError{"BAD_RESOURCE", "invalid resource path"}
 	}
@@ -51,8 +49,17 @@ func (h *FileHandler) Open(ctx context.Context, path, query string) (Resource, e
 	if err != nil || !utf8.ValidString(decoded) {
 		return Resource{}, &RemoteError{"BAD_RESOURCE", "invalid escaped path"}
 	}
-	if decoded == "/" {
-		decoded = "/index.txt"
+
+	// Directory URLs use an HTML entry point when present. The text fallback
+	// preserves existing DEEP nodes. Queries are cache hints for static files;
+	// validation still applies, but they never participate in filesystem access.
+	if strings.HasSuffix(decoded, "/") {
+		resource, err := h.Open(ctx, path+"index.html", query)
+		var remote *RemoteError
+		if err == nil || !errors.As(err, &remote) || remote.Code != "NOT_FOUND" {
+			return resource, err
+		}
+		return h.Open(ctx, path+"index.txt", query)
 	}
 	for _, part := range strings.Split(strings.TrimPrefix(decoded, "/"), "/") {
 		if part == "" || strings.HasPrefix(part, ".") || strings.HasSuffix(part, ".") || strings.HasSuffix(part, " ") || strings.ContainsAny(part, "\\:*?\"<>|\x00") {
@@ -103,7 +110,17 @@ func (h *FileHandler) Open(ctx context.Context, path, query string) (Resource, e
 		file.Close()
 		return Resource{}, err
 	}
-	mediaType := mime.TypeByExtension(filepath.Ext(decoded))
+
+	// Use predictable browser MIME types regardless of the host's registry.
+	mediaType := map[string]string{
+		".html": "text/html; charset=utf-8", ".htm": "text/html; charset=utf-8",
+		".css": "text/css; charset=utf-8", ".js": "text/javascript; charset=utf-8",
+		".mjs": "text/javascript; charset=utf-8", ".json": "application/json",
+		".svg": "image/svg+xml", ".ttf": "font/ttf", ".otf": "font/otf", ".woff": "font/woff", ".woff2": "font/woff2",
+	}[strings.ToLower(filepath.Ext(decoded))]
+	if mediaType == "" {
+		mediaType = mime.TypeByExtension(filepath.Ext(decoded))
+	}
 	if mediaType == "" {
 		mediaType = "application/octet-stream"
 	}

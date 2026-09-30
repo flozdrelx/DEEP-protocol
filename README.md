@@ -1,12 +1,36 @@
 # DEEP V2
 
-**Decentralized Extensible Endpoint Protocol - release 2.0.0**
+**Decentralized Extensible Endpoint Protocol - release 2.2.0**
 
 DEEP transfers resources through `deep://node.network/path` addresses using its own versioned messages. Networks plug in through adapters. The protocol is independent of HTTP and HellNet; a network integrates with DEEP rather than becoming part of its core.
 
 V2 requires **TLS 1.3**, hybrid **X25519 + ML-KEM-768** key establishment, and **ML-DSA-65** server authentication. Private nodes also require an authorized ML-DSA-65 client identity. The executable includes a client, file server, identity tools, and a local demo.
 
 This is the project's first official release line. It has automated validation and a documented threat model; it has not received an external security audit and is not an IETF-approved or publicly registered Internet standard.
+
+## Open websites on Windows
+
+DEEP 2.2 includes an optional graphical website viewer. It loads HTML, CSS,
+images, fonts, JavaScript modules, and same-origin resource fetches through DEEP.
+
+~~~powershell
+.\bin\deep.exe browse
+.\bin\deep.exe browse deep://node.network/
+~~~
+
+Keep the complete bin/viewer folder beside deep.exe and install the Microsoft
+Edge WebView2 Runtime. For running apps such as Flask, use HellNet 3.1 port
+hosting or DEEP's loopback application provider. Forms, redirects, and temporary
+login sessions are supported. Website files stay with the app. Static content
+folders with index.html remain supported.
+The terminal client and cross-platform protocol remain available separately.
+
+See [the viewer guide](docs/VIEWER.md) for setup, a working sample site, supported
+features, security boundaries, and Windows build instructions. CLI-only archives
+do not include the graphical viewer.
+
+See [application hosting and sessions](docs/APPLICATIONS.md) for port hosting,
+protocol details, compatibility, and limits.
 
 ## Quick start
 
@@ -32,7 +56,8 @@ go build -trimpath -o bin/deep ./cmd/deep
 ./bin/deep demo
 ```
 
-There are no third-party Go runtime dependencies. Python is optional interoperability test tooling.
+The Go protocol and CLI have no third-party Go runtime dependencies. The optional
+Windows viewer uses .NET and Microsoft WebView2. Python is optional interoperability test tooling.
 
 ## Start a private node
 
@@ -56,11 +81,11 @@ In another terminal:
 | `client.json` | Trusted network endpoints, server pins, and paths to the client identity. |
 | `identity.crt`, `identity.key` | Server-only ML-DSA-65 certificate and private key. Keep the key on the server. |
 | `client.crt`, `client.key` | Initial authorized client identity. The client key grants access to this private node. |
-| `content/index.txt` | Default resource returned for `/`. |
+| `content/index.txt` | Text fallback returned for `/` when index.html is absent. |
 
 Place only intended resources inside `content/`. For example, `content/docs/test.txt` is available at `deep://node.alpha/docs/test.txt`. Private authorization covers the node's entire resource set; V2 does not define per-path roles.
 
-`--output` writes a temporary file, checks the complete transfer's size and SHA-256, and publishes it without overwriting an existing file. Its destination must support hard links, such as NTFS or ext4. Without `--output`, `fetch` writes raw resource bytes to stdout; discard partial output if the command fails. Use the URI viewer for escaped terminal previews of untrusted content.
+`--output` writes a temporary file, checks the complete transfer's size and SHA-256, and publishes it without overwriting an existing file. Its destination must support hard links, such as NTFS or ext4. Without `--output`, `fetch` writes raw resource bytes to stdout; discard partial output if the command fails. Use `deep preview` for escaped terminal previews of untrusted content.
 
 `--info` writes metadata and security information to stderr. The default client resource limit is 1 GiB; `--max-bytes` can change it up to the protocol maximum of 1 TiB. `--timeout 60s` changes the client operation timeout; the server enforces its own independent limits. Ctrl+C stops the server.
 
@@ -145,7 +170,7 @@ To open `deep://` links using the console viewer, place a working client configu
 .\scripts\register.ps1 -Executable .\bin\deep.exe
 ```
 
-Use `-ReplaceExisting` only when replacing another registered handler. The script registers the current user only and is never run automatically by the build. The viewer accepts exactly one URI, verifies the transfer, and displays an escaped preview of at most 1 MiB. It does not execute scripts or render HTML.
+Use `-ReplaceExisting` only when replacing another registered handler. The script registers the current user only and is never run automatically by the build. When installed, the graphical viewer opens websites and their same-origin assets. CLI-only installations display an escaped terminal preview of at most 1 MiB. See the [viewer guide](docs/VIEWER.md) for the desktop profile and its limits.
 
 ## Validation and distribution
 
