@@ -1,4 +1,4 @@
-name: DEEP V2 verification
+name: DEEP verification
 
 on:
   push:
@@ -33,6 +33,8 @@ jobs:
         run: go test -race ./...
       - name: Independent Python conformance tests
         run: python -m unittest discover -s interop -p 'test_*.py' -v
+      - name: Release packaging tests
+        run: python -m unittest discover -s scripts -p 'test_release.py' -v
       - name: Native private-node demo
         run: go run ./cmd/deep demo
       - name: Build native executable for process tests
@@ -86,6 +88,8 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '10.0.x'
+      - name: Viewer policy tests
+        run: dotnet run --project viewer/DEEP.Viewer.PolicyTests -c Release
       - name: Build Windows CLI and portable viewer
         shell: pwsh
         run: ./scripts/build.ps1 -WithViewer

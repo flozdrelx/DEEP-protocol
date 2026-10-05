@@ -12,6 +12,7 @@ func TestParseURI(t *testing.T) {
 		raw  string
 		want URI
 	}{
+		{"deep://local_start.alpha", URI{"local_start.alpha", "local_start", "alpha", "/", "", ""}},
 		{"deep://node.alpha", URI{"node.alpha", "node", "alpha", "/", "", ""}},
 		{"DEEP://MiXeD.BeTa/A%2fb?q=UP%20Down#Local?Only", URI{"mixed.beta", "mixed", "beta", "/A%2fb", "q=UP%20Down", "Local?Only"}},
 		{"deep://n-1.net-2/?a=b&c=d/?#f%20g", URI{"n-1.net-2", "n-1", "net-2", "/", "a=b&c=d/?", "f%20g"}},
@@ -33,6 +34,7 @@ func TestParseURIRejectsMalformed(t *testing.T) {
 		"", "http://node.alpha", "deep:node.alpha", "deep:///node.alpha", "deep://alpha",
 		"deep://n.a.extra", "deep://node.alpha.", "deep://user@node.alpha/", "deep://node.alpha:1/",
 		"deep://127.0.0.1/", "deep://[::1]/", "deep://-node.alpha", "deep://node-.alpha",
+		"deep://_node.alpha", "deep://node_.alpha", "deep://node.net_work",
 		"deep://node._alpha", "deep://node.%61lpha", "deep://nódé.alpha", "deep://node.alpha/a b",
 		"deep://node.alpha/a\nb", "deep://node.alpha/a\x00b", "deep://node.alpha/\\evil",
 		"deep://node.alpha/☃", "deep://node.alpha/%", "deep://node.alpha/%0", "deep://node.alpha/%gg",

@@ -33,11 +33,18 @@ internal static class Program
     static void Main(string[] args)
     {
         ApplicationConfiguration.Initialize();
-        try { Application.Run(new BrowserForm(ViewerOptions.Parse(args))); }
+        ViewerOptions? options = null;
+        try {
+            options = ViewerOptions.Parse(args);
+            ViewerActivation.RequireEnabledAsync(options).GetAwaiter().GetResult();
+            Application.Run(new BrowserForm(options));
+        }
         catch (Exception ex)
         {
             Environment.ExitCode = 1;
-            MessageBox.Show(ex.Message, "DEEP could not start", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            if (options?.TestReport != null)
+                File.WriteAllText(options.TestReport, System.Text.Json.JsonSerializer.Serialize(new { ok=false, error=ex.Message }));
+            else MessageBox.Show(ex.Message, "DEEP could not start", MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
     }
 }

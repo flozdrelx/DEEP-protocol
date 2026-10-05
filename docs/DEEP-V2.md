@@ -2,7 +2,7 @@
 
 **Name:** Decentralized Extensible Endpoint Protocol.  
 **Application and framing version:** 2.  
-**Reference implementation:** 2.2.0 (wire version remains 2).
+**Reference implementation:** 3.0.0 (wire version remains 2).
 
 **Status:** official DEEP project release specification. No public Internet registration or external audit is implied.  
 **License:** Apache 2.0.
@@ -26,7 +26,7 @@ deep://node.network/path?query#fragment
 ```
 
 - The scheme and authority are accepted case-insensitively and converted to lowercase. Path, query, and fragment retain their spelling.
-- The authority contains **exactly two labels**: node and network. Each label contains 1 to 63 ASCII alphanumeric characters or `-`, with alphanumeric characters at both ends. Messages and registries use the canonical lowercase form.
+- The authority contains **exactly two labels**: node and network. Each label contains 1 to 63 ASCII alphanumeric characters or `-`, with alphanumeric characters at both ends. Since implementation 2.3.3, the node label also accepts internal underscores (`_`); the network label does not. Names are resolved by adapters, not DNS. Messages and registries use the canonical lowercase form.
 - Usernames, passwords, ports, literal IP addresses, and trailing dots are not allowed in the authority. The adapter supplies the transport address.
 - The complete URI allows up to **4096 ASCII bytes**, with no spaces, control characters, backslashes, or literal non-ASCII characters. Characters requiring encoding are represented by valid `%HH` escapes.
 - The path starts with `/`; if absent, it defaults to `/`. Path and query together, plus one separator byte when the query is nonempty, must not exceed 4096 bytes.
@@ -190,7 +190,7 @@ The program MUST exit with code zero and return exactly one endpoint object on s
 
 A resolver can discover nodes in its own network through external mechanisms. DEEP **trusts the authority/fingerprint binding returned by the adapter**. Designing authenticated decentralized resolution is that network's responsibility, not an automatic property of this interface.
 
-The `exec` profile handles resolution. Custom transports integrate through the library: `DialFunc(context.Context, Endpoint) (net.Conn, error)` and `Server.Serve(context.Context, net.Listener)`. The returned stream still receives the core's mandatory TLS layer. The standard executable includes only TCP transport.
+The `exec` profile handles resolution. Custom transports integrate through the library: `DialFunc(context.Context, Endpoint) (net.Conn, error)` and `Server.Serve(context.Context, net.Listener)`. The returned stream still receives the core's mandatory TLS layer. The standard executable includes direct TCP and native DEEP proxy transport. The optional top-level proxy setting contains one explicitly supplied address and has no default or network selector. When set, all authorities use it without fallback on error. When absent, direct adapters work independently. See [Proxy/1](DEEP-PROXY.md). The DEEP V2 wire format and TLS profile are unchanged.
 
 ## 8. Provider API and local behavior
 
@@ -236,3 +236,6 @@ DEEP-specific URI, message, error, and adapter details are defined in this docum
 [app/1](APPLICATIONS.md) adds EXCHANGE and CONTINUE (frame type 9) for bounded
 application requests and responses. FETCH remains unchanged. The extension
 defines a second REQUEST schema after CONTINUE and an application RESPONSE.
+
+DEEP 2.3 separates optional viewer activation from the backend. This is a local
+application preference, not a new wire operation or a network requirement.

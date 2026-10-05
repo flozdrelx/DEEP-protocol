@@ -66,13 +66,18 @@ func ParseURI(raw string) (URI, error) {
 }
 
 // ValidateAuthority accepts the canonical lowercase node.network form. A label
-// is 1..63 ASCII alphanumeric/hyphen characters, with alphanumeric ends.
+// is 1..63 ASCII characters with alphanumeric ends. Nodes additionally allow
+// internal underscores; network labels remain alphanumeric/hyphen only.
 func ValidateAuthority(authority string) error {
 	parts := strings.Split(authority, ".")
-	if len(parts) != 2 || !validLabel(parts[0]) || !validLabel(parts[1]) {
+	if len(parts) != 2 || !validNodeLabel(parts[0]) || !validLabel(parts[1]) {
 		return fmt.Errorf("authority must be canonical lowercase node.network (two ASCII labels)")
 	}
 	return nil
+}
+
+func validNodeLabel(label string) bool {
+	return validLabel(strings.ReplaceAll(label, "_", "-"))
 }
 
 func validLabel(label string) bool {

@@ -124,7 +124,7 @@ func initNode(args []string, out, diagnostic io.Writer) (err error) {
 	}{
 		{"identity.crt", cert, 0644},
 		{"identity.key", key, 0600},
-		{filepath.Join("content", "index.txt"), []byte("Hello from deep://" + *authority + "/\nDEEP V2: native messages, hybrid post-quantum key exchange, and ML-DSA-65 authentication.\n"), 0644},
+		{filepath.Join("content", "index.txt"), []byte("Hello from deep://" + *authority + "/\nDEEP: native messages, hybrid post-quantum key exchange, and ML-DSA-65 authentication.\n"), 0644},
 	}
 	if *upstream != "" {
 		files = files[:2]

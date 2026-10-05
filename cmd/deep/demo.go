@@ -93,7 +93,7 @@ func demo(ctx context.Context, out io.Writer) error {
 	}
 	client := deep.NewClient(registry)
 	client.Identity = &clientIdentity
-	fmt.Fprintln(out, "DEEP V2: two private networks, mutual ML-DSA-65 authentication, no HTTP.")
+	fmt.Fprintf(out, "DEEP %s (wire version 2): two private networks, mutual ML-DSA-65 authentication, no HTTP.\n", deep.Version)
 	for _, network := range []string{"alpha", "beta"} {
 		uri := "deep://node." + network + "/"
 		session, err := client.Dial(ctx, uri)

@@ -1,26 +1,69 @@
-# DEEP V2
+# DEEP 3.0.0
 
-**Decentralized Extensible Endpoint Protocol - release 2.2.0**
+**Decentralized Extensible Endpoint Protocol - release 3.0.0**
 
-DEEP transfers resources through `deep://node.network/path` addresses using its own versioned messages. Networks plug in through adapters. The protocol is independent of HTTP and HellNet; a network integrates with DEEP rather than becoming part of its core.
+DEEP transfers resources through `deep://node.network/path` addresses using its own versioned messages. Networks plug in through adapters. The protocol is independent of HTTP and any particular network; a network integrates with DEEP rather than becoming part of its core.
 
-V2 requires **TLS 1.3**, hybrid **X25519 + ML-KEM-768** key establishment, and **ML-DSA-65** server authentication. Private nodes also require an authorized ML-DSA-65 client identity. The executable includes a client, file server, identity tools, and a local demo.
+The compatible wire version 2 profile requires **TLS 1.3**, hybrid **X25519 + ML-KEM-768** key establishment, and **ML-DSA-65** server authentication. Private nodes also require an authorized ML-DSA-65 client identity. The executable includes a client, file server, identity tools, and a local demo.
 
-This is the project's first official release line. It has automated validation and a documented threat model; it has not received an external security audit and is not an IETF-approved or publicly registered Internet standard.
+Release 3.0.0 fixes application request handling and viewer validation while preserving wire version 2, configuration version 2, existing identities, app/1, and Proxy/1. It has automated validation and a documented threat model; it has not received an external security audit and is not an IETF-approved or publicly registered Internet standard.
+
+## Upgrading to 3.0.0
+
+Keep your existing configuration, certificates, keys, and proxy/viewer preferences.
+No identity regeneration or JSON version changes are required. Restart running
+DEEP programs after replacing the executable and, if used, the complete viewer.
+HellNet users need **HellNet 3.3.1+** for release-version compatibility; earlier
+HellNet versions reject a 3.x executable. See [the release and upgrade guide](docs/RELEASE-V3.md).
+
+## Backend and optional viewer
+
+DEEP runs as a backend by default. Other browsers and programs can use its
+CLI or Go library without enabling or installing the bundled viewer. See the
+[integration guide](docs/INTEGRATION.md) for the request interface and an example.
+
+~~~powershell
+.\bin\deep.exe viewer status
+.\bin\deep.exe viewer enable
+.\bin\deep.exe viewer disable
+~~~
+
+The setting is per user and separate from network configuration. Enabling the
+viewer does not take ownership of deep:// links. The server, clients, adapters,
+wire version 2, and app/1 remain available in backend-only mode.
+
+## Optional native proxy
+
+DEEP works independently using its direct adapters. A native proxy is optional:
+there is no default address, provider, port, or network-specific setting.
+
+~~~text
+deep proxy set --address IP:PORT
+deep proxy status
+deep proxy unset
+~~~
+
+Supply the address provided by your chosen proxy implementation. Commands use
+config.json beside deep.exe, or --config FILE. With a proxy configured, all
+requests use it and failures do not fall back to a direct adapter. Unset removes
+the setting and restores normal direct-adapter routing.
+
+See [the generic proxy option and wire contract](docs/DEEP-PROXY.md).
 
 ## Open websites on Windows
 
-DEEP 2.2 includes an optional graphical website viewer. It loads HTML, CSS,
+DEEP includes an optional graphical website viewer, disabled until you enable it. It loads HTML, CSS,
 images, fonts, JavaScript modules, and same-origin resource fetches through DEEP.
 
 ~~~powershell
+.\bin\deep.exe viewer enable
 .\bin\deep.exe browse
 .\bin\deep.exe browse deep://node.network/
 ~~~
 
 Keep the complete bin/viewer folder beside deep.exe and install the Microsoft
-Edge WebView2 Runtime. For running apps such as Flask, use HellNet 3.1 port
-hosting or DEEP's loopback application provider. Forms, redirects, and temporary
+Edge WebView2 Runtime. For running apps such as Flask, use DEEP's optional
+loopback application provider. Forms, redirects, and temporary
 login sessions are supported. Website files stay with the app. Static content
 folders with index.html remain supported.
 The terminal client and cross-platform protocol remain available separately.
@@ -114,7 +157,7 @@ See [Operations](docs/OPERATIONS.md) for configuration, credential distribution,
 
 ## Network adapters
 
-The suffix selects an explicitly configured adapter. Names such as `.hell`, `.quit`, and `.weird` do not need public DNS registration. A version-2 client configuration can contain multiple networks:
+Without a proxy, the suffix selects an explicitly configured direct adapter. Names such as `.hell`, `.quit`, and `.weird` do not need public DNS registration. A version-2 client configuration can contain multiple networks:
 
 ```json
 {
@@ -158,9 +201,9 @@ It must exit successfully and return one endpoint object on stdout:
 
 The program is executed directly without a shell. Its output is bounded and strictly validated. It does not receive the URI path, query, fragment, or client credentials through the resolver request. It is trusted local code running with the user's permissions.
 
-The library supports custom reliable transports through `Client.Dialers` and `Server.Serve(ctx, net.Listener)`. DEEP applies the same TLS and framing over them. The shipped executable uses TCP. Custom connections must support deadlines and return a stable peer address for per-peer limits.
+The library supports custom reliable transports through `Client.Dialers` and `Server.Serve(ctx, net.Listener)`. DEEP applies the same TLS and framing over them. The shipped executable supports direct TCP and the native DEEP proxy transport. Custom connections must support deadlines and return a stable peer address for per-peer limits.
 
-DEEP does not implement automatic DHT discovery, global name ownership, or anonymous routing. Each network is responsible for authenticated resolution and distribution of trusted server pins. HellNet integration is a separate next step.
+DEEP does not implement automatic DHT discovery, global name ownership, or anonymous routing. Each network is responsible for authenticated resolution and distribution of trusted server pins. External networks integrate through the same public interfaces.
 
 ## Optional Windows link handler
 

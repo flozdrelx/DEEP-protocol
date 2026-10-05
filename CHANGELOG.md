@@ -1,6 +1,51 @@
 # Changelog
 
-## 2.2.0 — 2026-09-30
+## 3.0.0 � 2026-10-03
+
+- Prevent the optional loopback application provider from silently replaying
+  submitted actions when a response is lost.
+- Validate application paths and queries separately; reject GET/HEAD bodies
+  before contacting the local backend.
+- Reject malformed percent escapes and raw URI punctuation in the viewer before
+  System.Uri can normalize them into a different address.
+- Handle SIGTERM through the CLI's graceful cancellation path.
+- Align backend, CLI help, viewer assembly, release archives, and documentation
+  on 3.0.0. Add isolated viewer policy tests and desktop ZIP packaging.
+- Preserve wire/configuration version 2, ALPN deep/2, app/1, Proxy/1, identities,
+  and explicit proxy/viewer preferences. HellNet 3.3.1 adds release compatibility.
+
+
+## 2.3.3
+
+- Accept internal underscores in node labels across the protocol, certificates, CLI, and optional viewer. Network labels keep their existing grammar. No network-specific aliases or proxy defaults were added.
+
+## 2.3.2 - 2026-10-03
+
+- Make the native proxy a single optional top-level setting with no default
+  address, port, provider or network selector.
+- Remove per-network proxy configuration and the CLI --network flag.
+- Route all requests through an explicitly configured proxy without fallback;
+  unset restores direct-adapter routing. Empty client configurations are valid.
+- Keep Proxy/1, DEEP TLS, the independent server/client and optional viewer unchanged.
+
+## 2.3.1 - 2026-10-02
+
+- Add an explicit native DEEP proxy per network, with set/status/unset commands.
+- Add generic ProxyAdapter and DialProxy APIs and the documented Proxy/1 handshake.
+- Require explicit proxy configuration; missing or unreachable proxies fail
+  without falling back to another adapter.
+- Preserve end-to-end DEEP TLS, pinned identity checks and application behavior.
+- Keep the viewer optional and the DEEP V2/app/1 wire formats unchanged.
+
+## 2.3.0 - 2026-10-01
+
+- Make the bundled viewer opt-in through viewer enable/disable/status.
+- Keep protocol, adapters, CLI requests, and Go APIs independent of the viewer.
+- Honor activation for direct viewer launches and the registered URI dispatcher.
+- Document external browser/program integration without automatic handler takeover.
+- Retain wire version 2, app/1, and existing identities/configuration.
+
+## 2.2.0 - 2026-09-30
 
 - Add optional app/1 requests with methods, headers, verified bodies, response
   statuses, and duplicate headers. Keep V2 FETCH and its security profile.

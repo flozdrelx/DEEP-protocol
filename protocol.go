@@ -13,7 +13,7 @@ import (
 	"unicode/utf8"
 )
 
-const Version = "2.2.0"
+const Version = "3.0.0"
 const ProtocolVersion = 2
 const HeaderSize = 20
 const MaxMetadataSize = 8192

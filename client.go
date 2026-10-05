@@ -35,7 +35,7 @@ func NewClient(registry *Registry) *Client {
 	return &Client{Registry: registry, Timeout: 30 * time.Second, MaxBytes: DefaultMaxBytes,
 		Dialers: map[string]DialFunc{"tcp": func(ctx context.Context, endpoint Endpoint) (net.Conn, error) {
 			return (&net.Dialer{}).DialContext(ctx, "tcp", endpoint.Address)
-		}},
+		}, ProxyTransport: DialProxy},
 	}
 }
 

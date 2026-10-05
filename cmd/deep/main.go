@@ -1,10 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// deep is the reference command-line client and server for DEEP V2.
+// deep is the reference command-line client and server for DEEP, using the compatible wire version 2.
 package main
 
 import (
-	"bufio"
 	"context"
 	"encoding/json"
 	"errors"
@@ -15,12 +14,13 @@ import (
 	"os/signal"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 
 	deep "deepprotocol"
 )
 
-const usage = `DEEP V2 - an HTTP-independent resource protocol
+const usage = `DEEP 3.0.0 - protocol backend with an optional viewer
 
 Usage:
   deep version
@@ -31,6 +31,9 @@ Usage:
   deep serve --config node-alpha/server.json
   deep fetch deep://node.alpha/ --config node-alpha/client.json [--output file] [--info]
   deep request deep://node.alpha/ --config client.json --info < request.json
+  deep proxy set --address IP:PORT [--config client.json]
+  deep proxy [status|unset] [--config client.json] [--json]
+  deep viewer [status|enable|disable] [--json]
   deep browse [deep://node.alpha/] [--config client.json]
   deep preview deep://node.alpha/ [--config client.json]
   deep open-uri deep://node.alpha/
@@ -39,14 +42,16 @@ init creates a private node and an authorized client in a protected new director
 Use init --public only for a node intended to accept unauthenticated clients.
 fetch streams the resource to stdout or saves a verified file without overwriting.
 --info writes transfer details and negotiated security information to stderr.
-browse opens the Windows website viewer; preview displays escaped terminal text.
-open-uri launches the viewer using config.json beside the executable.
+The backend works without a viewer. The optional viewer is disabled by default.
+viewer enable opts in; browse opens it; preview is an explicit terminal preview.
+open-uri launches the viewer only when enabled, using config.json beside the executable.
+Applications can use request/fetch or the Go library without enabling the viewer.
 Connections require TLS 1.3, X25519MLKEM768, and a pinned ML-DSA-65 server key.
 Private nodes additionally require an authorized ML-DSA-65 client certificate.
 `
 
 func main() {
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	if err := run(ctx, os.Args[1:], os.Stdout, os.Stderr); err != nil {
 		fmt.Fprintln(os.Stderr, "DEEP:", terminalText(err.Error()))
@@ -86,6 +91,10 @@ func run(ctx context.Context, args []string, out, diagnostic io.Writer) error {
 			return errors.New("demo does not accept arguments")
 		}
 		return demo(ctx, out)
+	case "proxy":
+		return proxyCommand(args[1:], out, diagnostic)
+	case "viewer":
+		return viewerCommand(args[1:], out, diagnostic)
 	case "browse":
 		return browseURI(ctx, args[1:], diagnostic)
 	case "preview":
@@ -210,14 +219,5 @@ func openURI(ctx context.Context, args []string, out, diagnostic io.Writer) erro
 	if err != nil {
 		return err
 	}
-	if viewerAvailable(executable) {
-		return launchViewer(ctx, executable, args[0], filepath.Join(filepath.Dir(executable), "config.json"))
-	}
-	err = previewURI(ctx, args[0], filepath.Join(filepath.Dir(executable), "config.json"), out, diagnostic)
-	if err != nil {
-		fmt.Fprintln(diagnostic, "DEEP:", terminalText(err.Error()))
-	}
-	fmt.Fprintln(diagnostic, "\nPress Enter to close.")
-	_, _ = bufio.NewReader(os.Stdin).ReadString('\n')
-	return err
+	return launchViewer(ctx, executable, args[0], filepath.Join(filepath.Dir(executable), "config.json"))
 }

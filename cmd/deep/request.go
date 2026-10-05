@@ -8,12 +8,17 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"time"
 )
 
 // JSON on stdin keeps cookies and form values out of command-line arguments.
 func requestResource(ctx context.Context, args []string, input io.Reader, out, diagnostic io.Writer) error {
+	if len(args) == 1 && (args[0] == "--help" || args[0] == "-h") {
+		fmt.Fprintln(out, "Usage: deep request deep://node.network/ --config client.json --info < request.json")
+		return nil
+	}
 	if len(args) == 0 {
 		return errors.New("usage: deep request deep://node.network/ --config client.json --info < request.json")
 	}

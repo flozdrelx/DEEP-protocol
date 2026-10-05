@@ -47,7 +47,9 @@ func NewHTTPHandler(address, authority string) (*HTTPHandler, error) {
 		return nil, err
 	}
 	target, _ := url.Parse(address)
-	transport := &http.Transport{Proxy: nil, DisableCompression: true, MaxResponseHeaderBytes: 8192,
+	// Fresh loopback connections prevent net/http from silently replaying a
+	// submitted action after a lost response, even with Idempotency-Key.
+	transport := &http.Transport{Proxy: nil, DisableCompression: true, DisableKeepAlives: true, MaxResponseHeaderBytes: 8192,
 		ResponseHeaderTimeout: 15 * time.Second, IdleConnTimeout: 30 * time.Second, MaxIdleConnsPerHost: 8,
 		DialContext: (&net.Dialer{Timeout: 5 * time.Second}).DialContext}
 	h := &HTTPHandler{target: target, authority: authority, transport: transport, slots: make(chan struct{}, 8)}
@@ -120,16 +122,17 @@ type heldBody struct {
 func (b *heldBody) Close() error { b.once.Do(b.release); return nil }
 
 func (h *HTTPHandler) Exchange(ctx context.Context, path, query string, request ApplicationRequest) (ApplicationResponse, error) {
-	if _, err := ParseURI("deep://" + h.authority + path + func() string {
-		if query != "" {
-			return "?" + query
-		}
-		return ""
-	}()); err != nil {
+	if err := ValidateResource(path, query); err != nil {
 		return ApplicationResponse{}, err
 	}
 	if !ValidApplicationMethod(request.Method) || int64(len(request.Body)) > MaxApplicationRequestBytes {
 		return ApplicationResponse{}, errors.New("invalid application request")
+	}
+	if (request.Method == "GET" || request.Method == "HEAD") && len(request.Body) != 0 {
+		return ApplicationResponse{}, errors.New("GET and HEAD must not carry a body")
+	}
+	if request.Headers == nil {
+		request.Headers = []Header{}
 	}
 	if err := ValidateApplicationHeaders(request.Headers); err != nil {
 		return ApplicationResponse{}, err

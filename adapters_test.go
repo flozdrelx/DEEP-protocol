@@ -140,7 +140,6 @@ func TestLoadRegistry(t *testing.T) {
 	}
 	invalid := []string{
 		`{}`, `null`, `[]`, `{"version":1,"networks":{}}`,
-		`{"version":2,"networks":{}}`,
 		`{"version":2,"version":2,"networks":{}}`,
 		`{"version":2,"Version":2,"networks":{}}`,
 		valid + `{}`, strings.Replace(valid, `"version":2`, `"version":2,"unknown":true`, 1),

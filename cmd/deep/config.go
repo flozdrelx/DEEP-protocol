@@ -56,7 +56,7 @@ func loadServerConfig(path string) (serverConfig, error) {
 		return config, fmt.Errorf("invalid V2 server configuration (see docs/MIGRATION-V2.md): %w", err)
 	}
 	if config.Version != 2 {
-		return config, errors.New("DEEP V2 requires version 2 configuration and new ML-DSA-65 identities; see docs/MIGRATION-V2.md")
+		return config, errors.New("DEEP requires configuration version 2 and ML-DSA-65 identities; see docs/MIGRATION-V2.md")
 	}
 	if (config.Root == "") == (config.Upstream == "") || config.Certificate == "" || config.PrivateKey == "" || config.Listen == "" {
 		return config, errors.New("exactly one of root/upstream, plus certificate, private_key, and listen are required")

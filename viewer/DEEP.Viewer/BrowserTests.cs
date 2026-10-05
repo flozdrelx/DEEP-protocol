@@ -43,6 +43,15 @@ internal sealed partial class BrowserForm
             await web.CoreWebView2.ExecuteScriptAsync("document.fonts.load('16px DeepTest').then(()=>window.deepFontLoaded=document.fonts.check('16px DeepTest'))");
             await WaitForScriptAsync("window.deepFontLoaded === true");
             checks.Add("font_decoded_by_renderer");
+            var pageRequests = verifiedRequests.Count;
+            await web.CoreWebView2.ExecuteScriptAsync("location.hash='local-section'");
+            await WaitForScriptAsync("location.hash === '#local-section'");
+            if (!mainVerified || pageFailed || verifiedRequests.Count != pageRequests)
+                throw new IOException("Fragment navigation lost verification or fetched another resource.");
+            await web.CoreWebView2.ExecuteScriptAsync("fetch('./data.json').then(r=>window.fragmentFetchOK=r.ok)");
+            await WaitForScriptAsync("window.fragmentFetchOK === true");
+            checks.Add("fragment_navigation_preserves_verified_page_and_fetch");
+
             await web.CoreWebView2.ExecuteScriptAsync("""
                 window.deepBlocked = {};
                 for (const [name,url,options] of [

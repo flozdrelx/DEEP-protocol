@@ -17,6 +17,10 @@ def main():
     startup.wShowWindow=0
     hidden={"startupinfo":startup,"creationflags":subprocess.CREATE_NO_WINDOW}
     with tempfile.TemporaryDirectory(prefix="deep-viewer-test-") as temp:
+        # Isolate opt-in preferences from the user's real DEEP installation.
+        os.environ["APPDATA"]=str(pathlib.Path(temp)/"preferences")
+        os.environ["XDG_CONFIG_HOME"]=os.environ["APPDATA"]
+        subprocess.run([str(args.deep.resolve()),"viewer","enable"],check=True,capture_output=True,**hidden)
         node=pathlib.Path(temp)/"node"
         subprocess.run([str(args.deep),"init","--authority","demo.test","--dir",str(node),"--address","127.0.0.1:9761"],check=True,capture_output=True,**hidden)
         shutil.copytree(ROOT/"examples/website",node/"content",dirs_exist_ok=True)

@@ -26,6 +26,9 @@ func viewerAvailable(executable string) bool {
 }
 
 func launchViewer(ctx context.Context, executable, uri, config string) error {
+	if err := requireViewerEnabled(); err != nil {
+		return err
+	}
 	if !viewerAvailable(executable) {
 		return errors.New("the graphical viewer requires Windows and bin/viewer/DEEP.Viewer.exe; build it with scripts/build-viewer.ps1, or use deep preview")
 	}

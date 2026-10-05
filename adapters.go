@@ -92,6 +92,7 @@ type NetworkAdapter interface {
 type Registry struct {
 	mu       sync.RWMutex
 	networks map[string]NetworkAdapter
+	proxy    NetworkAdapter
 }
 
 func NewRegistry() *Registry {
@@ -117,6 +118,22 @@ func (registry *Registry) Register(network string, adapter NetworkAdapter) error
 	return nil
 }
 
+// SetProxy configures one optional proxy for all authorities. Empty disables it.
+// Proxy errors never fall back to direct adapters. Existing sessions are unaffected.
+func (registry *Registry) SetProxy(address string) error {
+	var adapter NetworkAdapter
+	if address != "" {
+		if err := ValidateProxyAddress(address); err != nil {
+			return err
+		}
+		adapter = ProxyAdapter{Address: address}
+	}
+	registry.mu.Lock()
+	registry.proxy = adapter
+	registry.mu.Unlock()
+	return nil
+}
+
 func (registry *Registry) Resolve(ctx context.Context, authority string) (Endpoint, error) {
 	if err := ValidateAuthority(authority); err != nil {
 		return Endpoint{}, err
@@ -127,6 +144,9 @@ func (registry *Registry) Resolve(ctx context.Context, authority string) (Endpoi
 	network := authority[strings.LastIndexByte(authority, '.')+1:]
 	registry.mu.RLock()
 	adapter, exists := registry.networks[network]
+	if registry.proxy != nil {
+		adapter, exists = registry.proxy, true
+	}
 	registry.mu.RUnlock()
 	if !exists {
 		return Endpoint{}, fmt.Errorf("no adapter installed for network %q", network)
@@ -249,8 +269,13 @@ func (buffer *limitedBuffer) Bytes() []byte {
 
 type registryFile struct {
 	Version        int                    `json:"version"`
-	Networks       map[string]networkFile `json:"networks"`
+	Networks       map[string]networkFile `json:"networks,omitempty"`
+	Proxy          *proxyFile             `json:"proxy,omitempty"`
 	ClientIdentity *clientIdentityFile    `json:"client_identity,omitempty"`
+}
+
+type proxyFile struct {
+	Address string `json:"address"`
 }
 
 type clientIdentityFile struct {
@@ -327,8 +352,10 @@ func loadRegistryConfig(path string) (registryFile, string, error) {
 	if config.Version != ProtocolVersion {
 		return config, "", fmt.Errorf("adapter configuration version must be %d", ProtocolVersion)
 	}
-	if len(config.Networks) == 0 {
-		return config, "", fmt.Errorf("adapter configuration requires at least one network")
+	if config.Proxy != nil {
+		if err := ValidateProxyAddress(config.Proxy.Address); err != nil {
+			return config, "", err
+		}
 	}
 	if identity := config.ClientIdentity; identity != nil {
 		if !validIdentityPath(identity.Certificate) || !validIdentityPath(identity.PrivateKey) {
@@ -381,6 +408,11 @@ func registryFromConfig(config registryFile, directory string) (*Registry, error
 			return nil, fmt.Errorf("unsupported adapter %q for network %q", config.Adapter, network)
 		}
 		if err := registry.Register(network, adapter); err != nil {
+			return nil, err
+		}
+	}
+	if config.Proxy != nil {
+		if err := registry.SetProxy(config.Proxy.Address); err != nil {
 			return nil, err
 		}
 	}

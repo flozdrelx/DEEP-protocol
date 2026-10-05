@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: Apache-2.0
-"""Exercise a built DEEP V2 binary using isolated, real client/server processes.
+"""Exercise a built DEEP binary (wire version 2) using isolated, real client/server processes.
 
 No compiler is invoked. All generated identities, configurations, content, and
 outputs live in one TemporaryDirectory and are removed after servers stop.
@@ -98,7 +98,7 @@ class RunningNode:
                         details = self.log_path.read_text(encoding="utf-8")[:2000]
                         raise SmokeError("server stopped during startup: " + details)
                     continue
-                match = re.fullmatch(r"DEEP 2\.[0-9]+\.[0-9]+ listening on (127\.0\.0\.1:[0-9]+) for deep://"
+                match = re.fullmatch(r"DEEP [23]\.[0-9]+\.[0-9]+ listening on (127\.0\.0\.1:[0-9]+) for deep://"
                                      + re.escape(authority) + r"/\s*", line)
                 if match:
                     self.address = match.group(1)
@@ -237,7 +237,7 @@ def exercise(args):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--binary", required=True, type=Path, help="Existing DEEP V2 executable")
+    parser.add_argument("--binary", required=True, type=Path, help="Existing compatible DEEP executable")
     parser.add_argument("--probe", action="store_true", help="Also require live Python/OpenSSL mutual TLS interoperability")
     parser.add_argument("--public-check", action="store_true", help="Also test a separate explicitly public node")
     args = parser.parse_args()

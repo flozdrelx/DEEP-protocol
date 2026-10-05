@@ -4,7 +4,7 @@ namespace DeepViewer;
 
 internal static partial class NavigationPolicy
 {
-    [GeneratedRegex(@"^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$", RegexOptions.CultureInvariant)]
+    [GeneratedRegex(@"^[a-z0-9](?:[a-z0-9_-]{0,61}[a-z0-9])?\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$", RegexOptions.CultureInvariant)]
     private static partial Regex HostPattern();
 
     public static bool TryDeep(string value, out Uri uri)
@@ -18,6 +18,21 @@ internal static partial class NavigationPolicy
         // A port delimiter is forbidden even if System.Uri normalizes it away.
         var authority = value[7..].Split('/', '?', '#')[0];
         if (authority.Contains(':') || authority.Contains('%')) return false;
+        // System.Uri repairs invalid percent escapes and punctuation. Reject them
+        // before rendering so the viewer and the DEEP backend accept the same URI.
+        var tail = value[(7 + authority.Length)..];
+        var fragments = 0;
+        for (var i = 0; i < tail.Length; i++)
+        {
+            var c = tail[i];
+            if (c == '%')
+            {
+                if (i + 2 >= tail.Length || !Uri.IsHexDigit(tail[i + 1]) || !Uri.IsHexDigit(tail[i + 2])) return false;
+                i += 2;
+            }
+            else if (c == '#') { if (++fragments > 1) return false; }
+            else if (!char.IsAsciiLetterOrDigit(c) && !"-._~!$&'()*+,;=:@/?".Contains(c)) return false;
+        }
         uri = parsed;
         return true;
     }

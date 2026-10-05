@@ -280,7 +280,7 @@ internal sealed partial class BrowserForm : Form
             p{line-height:1.7;color:#536077}code{display:block;border:1px solid #dce2ef;background:white;padding:24px;border-radius:14px;color:#2446ba}
             .note{margin-top:35px;font-size:15px}</style></head><body><main><div class="label">DEEP / WEBSITE VIEWER</div>
             <h1>Your networks.<br>Your destinations.</h1><p>Enter a DEEP address above to open a site. Pages, styles, scripts, and images travel through your configured network adapter.</p>
-            <code>deep://node.network/</code><p class="note">For HellNet, keep your connection to the hosting peer open. This viewer supports content folders and running web apps, including forms and temporary login sessions.</p>
+            <code>deep://node.network/</code><p class="note">Keep your network provider running while browsing. This viewer supports content folders and running web apps, including forms and temporary login sessions.</p>
             </main></body></html>
             """);
         status.Text = "Ready · Enter a deep:// address · Ctrl+L to focus the address bar";

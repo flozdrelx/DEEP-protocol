@@ -16,23 +16,16 @@ own directory. For Flask on port 5000, using DEEP directly:
 .\bin\deep.exe serve --config .\app-identity\server.json
 ~~~
 
-In another terminal:
+In another terminal, enable the optional viewer first (DEEP 2.3+):
 
 ~~~powershell
+.\bin\deep.exe viewer enable
 .\bin\deep.exe browse deep://demo.local/ --config .\app-identity\client.json
 ~~~
 
 This creates a private node and client identity without a content directory.
-For HellNet, install HellNet 3.1 and DEEP 2.2, then select **Host a local website
-(port)** or run:
-
-~~~powershell
-.\hell.exe host --dir .\my-service --port 5000
-~~~
-
-The service folder holds identity and configuration files. Stopping HellNet
-does not stop Flask. Select the port each time; omitting --port selects
-content-folder mode. Restart existing HellNet sessions after upgrading.
+Network applications can expose this generic provider through their own
+routing and hosting interfaces. Consult the chosen provider's documentation.
 
 Server configuration accepts exactly one of root and upstream. An upstream
 must be plain HTTP at a numeric loopback IP with an explicit port, for example
@@ -133,3 +126,13 @@ an external security audit.
 The viewer follows at most ten same-origin redirects. Document 307/308 redirects
 preserve POST data in a one-use request scoped to the target document. Reloading
 such a document issues GET. Fetch redirect/credentials modes are not fully emulated.
+
+## Release 3.0.0 request handling
+
+The optional loopback application provider validates path and query separately
+and rejects GET/HEAD request bodies before contacting the backend. Each backend
+request uses a fresh loopback connection to prevent the HTTP transport from
+silently resubmitting an action after losing its response, including requests
+with Idempotency-Key. The header is still delivered to the application.
+A lost response remains an error; clients must not automatically retry writes.
+This does not change DEEP's native transport or session reuse.

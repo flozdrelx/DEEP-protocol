@@ -1,10 +1,24 @@
 # DEEP website viewer
 
-DEEP 2.2 provides a Windows viewer with the optional app/1 profile.
-Use HellNet 3.1 for port hosting; native content folders remain supported.
+DEEP 3.0.0 provides an opt-in Windows viewer with the app/1 profile.
+Use DEEP's optional application provider for local port hosting; native content folders remain supported.
 See [application hosting](APPLICATIONS.md) for forms, sessions, and limits.
 The CLI, protocol library, and servers remain available on Windows, Linux, and
 macOS. This first graphical viewer is Windows-only.
+
+## Enable the optional viewer
+
+The viewer is disabled by default. Install its files, then run:
+
+~~~powershell
+.\bin\deep.exe viewer enable
+~~~
+
+Use viewer status to check it and viewer disable to turn it off for new
+launches. Direct launches of DEEP.Viewer.exe respect the same setting.
+These commands do not change URI-handler ownership or network configuration.
+Other browsers and programs use DEEP without this viewer; see
+[the integration guide](INTEGRATION.md).
 
 ## Open a site
 
@@ -29,12 +43,12 @@ Register links after building/copying the viewer:
 
 The script upgrades the existing terminal handler belonging to that same DEEP
 executable. It still refuses to replace another application's handler without
-an explicit -ReplaceExisting. The registered command supplies fixed executable
-and configuration paths; the received URI is a separate argument.
+an explicit -ReplaceExisting. The registered command calls deep.exe open-uri; the received URI is a separate
+argument and the dispatcher checks the viewer setting on every launch.
 
-The open-uri command also launches the viewer when installed. CLI-only
-installations retain the terminal preview; the preview command explicitly
-selects the escaped terminal preview on any supported CLI platform.
+The open-uri dispatcher launches the viewer only when enabled. When disabled,
+it returns an error without fetching content. The explicit preview command
+selects an escaped terminal preview on supported CLI platforms.
 
 ## A local website in two terminals
 
@@ -56,27 +70,12 @@ This uses a private local node and its generated client identity. The sample
 contains HTML, CSS imports, an SVG image, JavaScript modules, relative links,
 and a same-origin JSON fetch. No public tunnel or HTTP content server is needed.
 
-## Use it with HellNet
+## Use a network provider
 
-Keep HellNet hosting and the connecting user's peer connection running as before.
-For Flask, start the app normally and run HellNet host with --port 5000.
-Templates and assets stay with your app. For content-folder mode, use:
-
-~~~text
-my-site/
-  content/
-    index.html
-    assets/
-      style.css
-      app.js
-      logo.svg
-~~~
-
-Open the real deep://<identity>.hell/ link in DEEP. Restart any already-running
-host after installing the updated DEEP executable so it uses the new file server.
-Existing HellNet identities and adapter configuration do not need changes.
-A remote host still running DEEP 2.0 can serve an explicit /index.html URL, but
-needs the update for HTML directory indexes and static cache-busting queries.
+Open a deep://node.network/ link using a direct adapter or the optional generic
+proxy. A proxy has no default address; explicitly set the chosen provider's
+IP:PORT with deep proxy set --address IP:PORT. Provider-specific discovery and
+connection steps belong to that provider. See [native proxy configuration](DEEP-PROXY.md).
 
 ## Supported content
 
@@ -116,7 +115,7 @@ automatic downloads are disabled. Use deep fetch --output to save a file.
 These are application protections, not an anonymity claim or an external audit.
 WebView2 is a separately maintained browser runtime, with its own OS integration
 and update behavior. Keep it updated. The viewer profile does not change
-Cloudflare's role in HellNet's transport or hide network metadata.
+a network provider's transport or hide network metadata.
 
 Per window: six concurrent fetch processes, 16 MiB per resource, 128 MiB and 512
 resource requests per top-level navigation, and a 30-second fetch deadline

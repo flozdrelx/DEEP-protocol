@@ -1,8 +1,8 @@
-# DEEP V2 security
+# DEEP security
 
-DEEP 2.2.0 provides authenticated resource transfer with explicit trust configuration and bounded server operation. Security primitives come from Go's standard library. Use Go 1.27.1 or later and keep the toolchain patched when rebuilding.
+DEEP 3.0.0 provides authenticated resource transfer with explicit trust configuration and bounded server operation. Security primitives come from Go's standard library. Use Go 1.27.1 or later and keep the toolchain patched when rebuilding.
 
-This release has automated security and interoperability tests. It has not received an independent cryptographic or deployment audit. The exact checks performed locally are recorded in [Validation](docs/VALIDATION-V2.md).
+This release has automated security and interoperability tests. It has not received an independent cryptographic or deployment audit. The exact checks performed locally are recorded in [Validation](docs/VALIDATION-V3.md).
 
 ## Threat model
 
@@ -106,3 +106,26 @@ redirects to the same authority. Cookies are temporary and unavailable to
 document.cookie; browser credentials/SameSite modes are not fully emulated.
 The backend remains part of the trusted local environment. See
 [application boundaries](docs/APPLICATIONS.md) for the complete profile.
+
+## Optional activation (2.3)
+
+The viewer is disabled by default and checks a per-user preference before
+launching. This is a usability setting, not an authorization boundary against
+local processes. Network authentication and backend access never depend on it.
+External frontend authors must implement their own origin and permission model.
+
+
+## Native proxy trust
+
+The optional proxy adapter uses only an explicitly configured literal loopback
+address. It authenticates no local process: the listening network application
+is trusted to verify its network's identity bindings and supply the expected
+server key pin, just as an exec resolver is trusted. It is not protection
+against malicious local users or administrators. Do not expose the listener
+on a public interface.
+
+Resolve and connect use bounded native Proxy/1 frames and deadlines. Connect
+is bound to the resolved pin; DEEP then performs its unchanged mandatory TLS
+and authority checks through the byte stream. Paths, credentials and content
+are not disclosed by the control messages. Missing/unreachable proxy settings
+have no fallback. See [the native proxy contract](docs/DEEP-PROXY.md).
