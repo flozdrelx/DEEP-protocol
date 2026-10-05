@@ -67,20 +67,34 @@ func TestViewerSettingDoesNotGateBackend(t *testing.T) {
 	root := t.TempDir()
 	t.Setenv("APPDATA", root)
 	t.Setenv("XDG_CONFIG_HOME", root)
-	if err := requireViewerEnabled(); err == nil {
-		t.Fatal("viewer enabled by default")
+	// macOS ignores APPDATA and XDG_CONFIG_HOME and uses
+	// $HOME/Library/Application Support. Isolate it before reading or writing.
+	t.Setenv("HOME", root)
+	path, err := viewerSettingsPath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	relative, err := filepath.Rel(root, path)
+	if err != nil || !filepath.IsLocal(relative) {
+		t.Fatalf("viewer settings escaped the temporary directory: %q (%v)", path, err)
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatalf("expected missing viewer settings, got: %v", err)
+	}
+	if err := requireViewerEnabled(); err == nil || !strings.Contains(err.Error(), "disabled") {
+		t.Fatalf("expected viewer disabled by default, got: %v", err)
 	}
 	for _, args := range [][]string{{"browse"}, {"open-uri", "deep://node.test/"}} {
 		if err := run(context.Background(), args, io.Discard, io.Discard); err == nil || !strings.Contains(err.Error(), "disabled") {
 			t.Fatalf("not blocked: %v", err)
 		}
 	}
-	path, err := viewerSettingsPath()
-	if err != nil {
+	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
 		t.Fatal(err)
 	}
-	os.MkdirAll(filepath.Dir(path), 0700)
-	os.WriteFile(path, []byte("broken preferences"), 0600)
+	if err := os.WriteFile(path, []byte("broken preferences"), 0600); err != nil {
+		t.Fatal(err)
+	}
 	if err := requireViewerEnabled(); err == nil {
 		t.Fatal("invalid settings enabled viewer")
 	}

@@ -21,9 +21,13 @@ def main():
         root=pathlib.Path(temp)
         os.environ["APPDATA"]=str(root/"preferences")
         os.environ["XDG_CONFIG_HOME"]=os.environ["APPDATA"]
+        # macOS stores preferences below HOME, ignoring APPDATA and XDG_CONFIG_HOME.
+        os.environ["HOME"]=str(root)
         state=json.loads(command("viewer","status","--json").stdout)
+        settings=pathlib.Path(state["settings"]).resolve()
+        assert settings.is_relative_to(root.resolve()), "Viewer settings escaped the temporary directory"
         assert not state["enabled"]
-        assert not pathlib.Path(state["settings"]).exists()
+        assert not settings.exists()
         for verb in ("browse","open-uri"):
             result=command(verb,"deep://demo.test/",ok=False)
             assert b"disabled" in result.stderr
