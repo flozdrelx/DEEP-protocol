@@ -44,7 +44,7 @@ func initNode(args []string, out, diagnostic io.Writer) (err error) {
 	authority := flags.String("authority", "", "Server identity in node.network format")
 	dir := flags.String("dir", "", "New protected directory for identity, content, and configuration")
 	address := flags.String("address", "127.0.0.1:9761", "host:port address for listening and connecting")
-	upstream := flags.String("upstream", "", "Optional loopback HTTP application URL; omits the content directory")
+	upstream := flags.String("upstream", "", "Optional localhost/loopback HTTP(S) application URL; omits the content directory")
 	public := flags.Bool("public", false, "Explicitly allow clients without a client certificate")
 	proceed, err := parseFlags(flags, args)
 	if err != nil || !proceed {

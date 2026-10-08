@@ -17,13 +17,13 @@ import (
 func TestApplicationPortSession(t *testing.T) {
 	var writes atomic.Int32
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Host != "node.alpha" {
-			t.Error("DEEP host missing")
+		if host, _, err := net.SplitHostPort(r.Host); err != nil || host != "127.0.0.1" {
+			t.Error("local upstream host missing")
 		}
 		if r.Header.Get("Proxy-Authorization") != "" || r.Header.Get("X-Forwarded-Host") != "node.alpha" {
 			t.Error("unsafe forwarded headers")
 		}
-		if r.Header.Get("Origin") != "" && r.Header.Get("Origin") != "http://node.alpha" {
+		if r.Header.Get("Origin") != "" && r.Header.Get("Origin") != "http://"+r.Host {
 			t.Error("origin not adapted")
 		}
 		switch r.URL.Path {
@@ -106,12 +106,12 @@ func TestApplicationPortSession(t *testing.T) {
 }
 
 func TestHTTPUpstreamRejectsUnsafeTargets(t *testing.T) {
-	for _, target := range []string{"https://127.0.0.1:5000", "http://localhost:5000", "http://192.0.2.1:5000", "http://127.0.0.1", "http://127.0.0.1:0", "http://u:p@127.0.0.1:5000", "http://127.0.0.1:5000/path", "http://127.0.0.1:5000?x=1", "http://127.0.0.1:5000/#fragment"} {
+	for _, target := range []string{"http://192.0.2.1:5000", "http://127.0.0.1", "http://127.0.0.1:0", "http://u:p@127.0.0.1:5000", "http://127.0.0.1:5000/path", "http://127.0.0.1:5000?x=1", "http://127.0.0.1:5000/#fragment"} {
 		if ValidateHTTPUpstream(target) == nil {
 			t.Errorf("accepted %s", target)
 		}
 	}
-	for _, target := range []string{"http://127.0.0.1:5000", "http://[::1]:5000"} {
+	for _, target := range []string{"http://127.0.0.1:5000", "http://[::1]:5000", "http://localhost:5000", "https://localhost:5000", "https://127.0.0.1:5000"} {
 		if err := ValidateHTTPUpstream(target); err != nil {
 			t.Fatal(err)
 		}

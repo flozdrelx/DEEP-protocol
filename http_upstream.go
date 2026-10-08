@@ -28,13 +28,13 @@ type HTTPHandler struct {
 
 func ValidateHTTPUpstream(address string) error {
 	u, err := url.Parse(address)
-	if err != nil || u.Scheme != "http" || u.User != nil || u.RawQuery != "" || u.ForceQuery || u.Fragment != "" || u.RawFragment != "" || (u.Path != "" && u.Path != "/") {
-		return errors.New("upstream must be http://127.0.0.1:port or http://[::1]:port")
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.User != nil || u.RawQuery != "" || u.ForceQuery || u.Fragment != "" || u.RawFragment != "" || (u.Path != "" && u.Path != "/") {
+		return errors.New("upstream must be an HTTP or HTTPS localhost/loopback URL with an explicit port")
 	}
 	ip := net.ParseIP(u.Hostname())
 	port, err := strconv.Atoi(u.Port())
-	if ip == nil || !ip.IsLoopback() || err != nil || port < 1 || port > 65535 || strconv.Itoa(port) != u.Port() {
-		return errors.New("upstream requires a numeric loopback address and a port between 1 and 65535")
+	if (strings.ToLower(u.Hostname()) != "localhost" && (ip == nil || !ip.IsLoopback())) || err != nil || port < 1 || port > 65535 || strconv.Itoa(port) != u.Port() {
+		return errors.New("upstream requires localhost or a numeric loopback address and a port between 1 and 65535")
 	}
 	return nil
 }
@@ -47,11 +47,24 @@ func NewHTTPHandler(address, authority string) (*HTTPHandler, error) {
 		return nil, err
 	}
 	target, _ := url.Parse(address)
+	dialer := &net.Dialer{Timeout: 5 * time.Second}
+	dialContext := dialer.DialContext
+	if strings.EqualFold(target.Hostname(), "localhost") {
+		// Resolve only to literal loopback addresses, without DNS or hosts-file
+		// overrides. IPv6-only local servers remain reachable.
+		dialContext = func(ctx context.Context, network, _ string) (net.Conn, error) {
+			conn, err := dialer.DialContext(ctx, network, net.JoinHostPort("127.0.0.1", target.Port()))
+			if err == nil || ctx.Err() != nil {
+				return conn, err
+			}
+			return dialer.DialContext(ctx, network, net.JoinHostPort("::1", target.Port()))
+		}
+	}
 	// Fresh loopback connections prevent net/http from silently replaying a
 	// submitted action after a lost response, even with Idempotency-Key.
 	transport := &http.Transport{Proxy: nil, DisableCompression: true, DisableKeepAlives: true, MaxResponseHeaderBytes: 8192,
 		ResponseHeaderTimeout: 15 * time.Second, IdleConnTimeout: 30 * time.Second, MaxIdleConnsPerHost: 8,
-		DialContext: (&net.Dialer{Timeout: 5 * time.Second}).DialContext}
+		DialContext: dialContext}
 	h := &HTTPHandler{target: target, authority: authority, transport: transport, slots: make(chan struct{}, 8)}
 	h.client = &http.Client{Transport: transport, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 	return h, nil
@@ -95,7 +108,8 @@ func (h *HTTPHandler) backendURL(value string) string {
 		return value
 	}
 	if u.Scheme == "deep" && u.Host == h.authority {
-		u.Scheme = "http"
+		u.Scheme = h.target.Scheme
+		u.Host = h.target.Host
 		return u.String()
 	}
 	return value
@@ -161,8 +175,9 @@ func (h *HTTPHandler) Exchange(ctx context.Context, path, query string, request 
 	if err != nil {
 		return ApplicationResponse{}, err
 	}
-	// The connection destination is fixed above. Host identifies the DEEP site.
-	r.Host = h.authority
+	// Route the local server exactly as its configured URL does. The DEEP
+	// authority stays in trusted forwarding metadata, never the local Host.
+	r.Host = h.target.Host
 	blocked := blockedHeaders(request.Headers)
 	for _, header := range request.Headers {
 		if blocked[header.Name] || header.Name == "host" || header.Name == "accept-encoding" || header.Name == "forwarded" || strings.HasPrefix(header.Name, "x-forwarded-") {

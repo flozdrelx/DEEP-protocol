@@ -86,7 +86,13 @@ internal sealed partial class BrowserForm
             checks.Add("reload");
             // A missing resource must become a readable in-viewer error.
             Navigate(new Uri(new Uri(options.Uri!), "/does-not-exist.html").AbsoluteUri);
-            await WaitForScriptAsync("document.title === 'Could not load this resource'");
+            await WaitForScriptAsync("document.title === 'Could not load this resource' || /HTTP ERROR 404/.test(document.body.textContent)");
+            // A native missing resource is a DEEP error. A local HTTP server
+            // may instead return a verified 404 with an empty body, which
+            // WebView2 renders using its built-in missing-page screen.
+            if (await web.CoreWebView2.ExecuteScriptAsync("/HTTP ERROR 404/.test(document.body.textContent)") == "true" &&
+                !verifiedRequests.Contains(new Uri(new Uri(options.Uri!), "/does-not-exist.html").AbsoluteUri))
+                throw new IOException("The application 404 was not verified through DEEP.");
             checks.Add("missing_resource_error_page");
             await File.WriteAllTextAsync(options.TestReport!, JsonSerializer.Serialize(new {
                 ok = true, checks, resources = firstRequests, screenshot,

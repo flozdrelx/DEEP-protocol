@@ -28,7 +28,7 @@ Network applications can expose this generic provider through their own
 routing and hosting interfaces. Consult the chosen provider's documentation.
 
 Server configuration accepts exactly one of root and upstream. An upstream
-must be plain HTTP at a numeric loopback IP with an explicit port, for example
+must be HTTP or HTTPS at localhost or a numeric loopback IP with an explicit port, for example
 http://127.0.0.1:5000 or http://[::1]:5000. DNS names, remote addresses,
 credentials, base paths, and queries are rejected. Bind the app to loopback
 if DEEP should be its only remotely reachable content entrance.
@@ -90,9 +90,14 @@ with 405, and retains existing ERROR responses for missing files.
 
 The connection destination is fixed. Proxy environment variables and backend
 redirect following are disabled. Hop-by-hop, proxy, Host, Content-Length,
-Accept-Encoding, and user-supplied forwarding fields are filtered. Host and
-trusted X-Forwarded-Host identify the DEEP authority; X-Forwarded-Proto is deep.
-Same-authority DEEP Origin/Referer values become HTTP backend-origin values.
+Accept-Encoding, and user-supplied forwarding fields are filtered. Host matches
+the selected local upstream URL, allowing Caddy and other virtual-host servers
+to select their website. Trusted X-Forwarded-Host identifies the DEEP authority;
+X-Forwarded-Proto is deep. Same-authority DEEP Origin/Referer values become
+local backend-origin values, preserving ordinary same-origin checks. Localhost
+is dialed through literal IPv4/IPv6 loopback addresses without DNS. HTTPS
+upstreams require a certificate trusted by the hosting computer; certificate
+validation is never disabled.
 Configure any proxy middleware deliberately.
 
 Relative redirects stay relative. Absolute HTTP(S) redirects to the exact

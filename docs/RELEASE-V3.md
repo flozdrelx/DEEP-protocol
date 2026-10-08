@@ -1,6 +1,6 @@
-# DEEP 3.0.0 release and upgrade
+# DEEP 3.0.1 release and upgrade
 
-DEEP 3.0.0 is the reference implementation release number. The interoperable
+DEEP 3.0.1 is the reference implementation release number. The interoperable
 wire format remains version 2 with ALPN deep/2; configuration files keep
 version: 2. The application profile remains app/1 and the native proxy remains
 Proxy/1. Existing 2.x identities, server pins, direct adapters, and configuration
@@ -8,10 +8,14 @@ remain usable. Do not regenerate keys or change a JSON version to 3.
 
 ## What changed
 
-This release fixes duplicate submissions in the optional loopback application
-provider, validates its resource components before contacting the backend,
-and makes viewer URI validation agree with the backend. SIGTERM now follows
-the CLI shutdown path. The backend and optional viewer share version 3.0.0.
+This patch fixes local website routing for Caddy and other servers. The optional
+application provider sends the selected local Host and same-origin values,
+accepts localhost as well as numeric loopbacks, and supports trusted HTTPS.
+The backend and optional viewer share version 3.0.1. The viewer's renderer
+tests accept verified application 404 responses as well as native DEEP errors.
+
+The 3.0.0 fixes remain: no silent replay of submitted actions, validated resource
+components, aligned viewer URI validation, and graceful SIGTERM shutdown.
 
 Proxy configuration remains optional with no provider, address, or port
 selected by default. The viewer remains disabled until explicitly enabled.
@@ -29,6 +33,9 @@ For HellNet, install **HellNet 3.3.1 or newer** as well. This compatibility upda
 accepts DEEP 3.x and recognizes its server startup message. Earlier HellNet
 versions reject DEEP 3.x even though the wire format remains compatible.
 Your .hell service identities and the local introduction address stay the same.
+Local website hosting with a port or URL requires DEEP 3.0.1+ on the hosting
+computer; HellNet 3.3.2 adds the URL input. Existing DEEP 3.x visitors remain
+wire-compatible.
 
 Verify the backend with:
 
@@ -49,7 +56,7 @@ build it also creates a Windows desktop ZIP:
 
 ~~~powershell
 .\scripts\build.ps1 -WithViewer
-python .\scripts\release.py --windows-viewer .\bin\viewer --output .\dist\v3.0.0
+python .\scripts\release.py --windows-viewer .\bin\viewer --output .\dist\v3.0.1
 ~~~
 
 The output directory must not exist. BUILD-MANIFEST.json records target,

@@ -1,4 +1,31 @@
-# DEEP 3.0.0 validation
+# DEEP 3.x validation
+
+## 3.0.1 local website patch - 2026-10-08
+
+The patch was tested on Windows amd64 with Go 1.27.1 and .NET SDK 10.0.401.
+The earlier 3.0.0 results below remain a historical record.
+
+- Go suites, race detection, and static analysis passed for DEEP and HellNet
+  3.3.2, with the external DEEP tests enabled in HellNet.
+- The original provider reproduced an empty 200 response from a host-matched
+  local server. The fixed provider passed HTML/CSS and local Host/Origin/Referer
+  regressions with numeric loopback and localhost targets.
+- IPv6-only localhost fallback passed. Untrusted HTTPS certificates were
+  rejected; an explicitly trusted test certificate worked.
+- A generic server and real Caddy sites bound to numeric loopback and localhost
+  returned HTML and every fixture asset through isolated HellNet instances.
+- WebView2 154.0.4258.62 passed Caddy CSS imports, images, fonts, modules, fetch,
+  fragment/page navigation, history, reload, and a verified application 404.
+- Flask forms, CSRF, 307/303 redirects, cookies, authenticated JSON, reload,
+  login and logout passed through the viewer. Hosting created only an identity
+  folder, and stopping the host left the web application running.
+- Viewer URI/cookie policy tests passed. Windows, Linux, and macOS amd64
+  cross-builds passed; only Windows executables were run locally.
+
+These checks used temporary identities/settings and a local encrypted relay.
+No public tunnel, remote CI, or other-laptop result is claimed for this patch.
+
+## 3.0.0 release - 2026-10-03
 
 Checked locally on Windows amd64 on October 3, 2026, with Go 1.27.1 and
 .NET SDK 10.0.401. This records automated checks, not an independent security audit.

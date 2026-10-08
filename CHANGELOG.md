@@ -1,5 +1,18 @@
 # Changelog
 
+## 3.0.1 - 2026-10-08
+
+- Route the optional application provider to the selected local Host instead
+  of the DEEP authority, fixing blank pages from Caddy and other virtual hosts.
+- Adapt same-authority Origin/Referer to the selected local origin while retaining
+  the DEEP authority in trusted forwarding metadata.
+- Accept localhost and numeric loopback HTTP(S) origins with explicit ports;
+  dial localhost via literal IPv4/IPv6 loopback without DNS and verify HTTPS
+  certificates using the hosting computer's trusted roots.
+- Cover local routing, spoofed forwarding fields, assets, IPv6-only servers,
+  HTTPS trust, and verified application 404 responses in regression tests.
+- Preserve wire/configuration version 2, app/1, Proxy/1, and existing identities.
+
 ## 3.0.0 � 2026-10-03
 
 - Prevent the optional loopback application provider from silently replaying

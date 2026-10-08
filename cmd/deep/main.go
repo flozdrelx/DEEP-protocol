@@ -20,7 +20,7 @@ import (
 	deep "deepprotocol"
 )
 
-const usage = `DEEP 3.0.0 - protocol backend with an optional viewer
+const usage = `DEEP 3.0.1 - protocol backend with an optional viewer
 
 Usage:
   deep version

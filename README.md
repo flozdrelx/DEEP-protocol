@@ -1,20 +1,22 @@
-# DEEP 3.0.0
+# DEEP 3.0.1
 
-**Decentralized Extensible Endpoint Protocol - release 3.0.0**
+**Decentralized Extensible Endpoint Protocol - release 3.0.1**
 
 DEEP transfers resources through `deep://node.network/path` addresses using its own versioned messages. Networks plug in through adapters. The protocol is independent of HTTP and any particular network; a network integrates with DEEP rather than becoming part of its core.
 
 The compatible wire version 2 profile requires **TLS 1.3**, hybrid **X25519 + ML-KEM-768** key establishment, and **ML-DSA-65** server authentication. Private nodes also require an authorized ML-DSA-65 client identity. The executable includes a client, file server, identity tools, and a local demo.
 
-Release 3.0.0 fixes application request handling and viewer validation while preserving wire version 2, configuration version 2, existing identities, app/1, and Proxy/1. It has automated validation and a documented threat model; it has not received an external security audit and is not an IETF-approved or publicly registered Internet standard.
+Release 3.0.1 fixes local website routing for Caddy and other servers: the local Host and same-origin values match the selected backend URL. The optional application provider accepts localhost and loopback HTTP(S) origins, including IPv6. Wire version 2, configuration version 2, existing identities, app/1, and Proxy/1 remain compatible. It has automated validation and a documented threat model; it has not received an external security audit and is not an IETF-approved or publicly registered Internet standard.
 
-## Upgrading to 3.0.0
+## Upgrading to 3.0.1
 
 Keep your existing configuration, certificates, keys, and proxy/viewer preferences.
 No identity regeneration or JSON version changes are required. Restart running
 DEEP programs after replacing the executable and, if used, the complete viewer.
 HellNet users need **HellNet 3.3.1+** for release-version compatibility; earlier
 HellNet versions reject a 3.x executable. See [the release and upgrade guide](docs/RELEASE-V3.md).
+For the updated local website menu, use HellNet 3.3.2 and DEEP 3.0.1 on the
+hosting computer. Existing DEEP 3.x visitors use the same wire protocol.
 
 ## Backend and optional viewer
 
