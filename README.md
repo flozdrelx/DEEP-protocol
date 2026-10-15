@@ -8,6 +8,13 @@ The compatible wire version 2 profile requires **TLS 1.3**, hybrid **X25519 + ML
 
 Release 3.0.1 fixes local website routing for Caddy and other servers: the local Host and same-origin values match the selected backend URL. The optional application provider accepts localhost and loopback HTTP(S) origins, including IPv6. Wire version 2, configuration version 2, existing identities, app/1, and Proxy/1 remain compatible. It has automated validation and a documented threat model; it has not received an external security audit and is not an IETF-approved or publicly registered Internet standard.
 
+### Security and Privacy Notice
+
+DEEP is experimental software. Although it implements authenticated and encrypted communication, its overall security has not been independently audited or fully verified.
+DEEP does **not** provide anonymous routing or protection against traffic analysis. Network addresses, traffic timing, resource sizes, and other identifying information may remain observable.
+Do not assume that DEEP provides anonymity or rely on it as the sole protection for sensitive communications. See [SECURITY.md](SECURITY.md) for the threat model, security limitations, and vulnerability reporting instructions.
+Automated tests and validation results help identify defects but do not establish that the implementation is free of vulnerabilities or that its security guarantees hold under all deployment conditions.
+
 ## Upgrading to 3.0.1
 
 Keep your existing configuration, certificates, keys, and proxy/viewer preferences.
