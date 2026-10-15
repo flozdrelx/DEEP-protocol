@@ -1,6 +1,6 @@
 # DEEP security
 
-DEEP 3.0.0 provides authenticated resource transfer with explicit trust configuration and bounded server operation. Security primitives come from Go's standard library. Use Go 1.27.1 or later and keep the toolchain patched when rebuilding.
+DEEP 3.0.1 provides authenticated resource transfer with explicit trust configuration and bounded server operation. Security primitives come from Go's standard library. Use Go 1.27.1 or later and keep the toolchain patched when rebuilding.
 
 This release has automated security and interoperability tests. It has not received an independent cryptographic or deployment audit. The exact checks performed locally are recorded in [Validation](docs/VALIDATION-V3.md).
 
@@ -65,9 +65,44 @@ DEEP does not provide anonymous routing, traffic-analysis resistance, hidden SNI
 
 Release checksums alone do not authenticate the publisher. Obtain binaries and checksums from a trusted publication channel. Public repository hosting and a release-signing identity must be selected by the maintainer before publishing.
 
-## Reporting
+## Reporting Bugs and Security Vulnerabilities
 
-A public repository security contact has not yet been configured. Before publishing, the maintainer must provide a private reporting channel or enable private security advisories. Do not post private keys or sensitive live data. Include the version, platform, minimal reproduction, and observed impact.
+Feedback from users, developers, and security researchers is greatly appreciated. Reports of bugs, unexpected behavior, design weaknesses, and potential security vulnerabilities help improve DEEP.
+
+### General Bugs
+
+For non-security-related bugs, unexpected behavior, or documentation errors, open a GitHub Issue:
+
+https://github.com/flozdrelx/DEEP-protocol/issues
+
+Please include the affected version or commit, operating system, steps to reproduce the issue, expected and actual behavior, and relevant logs when available. Remove credentials, private keys, and other sensitive information before sharing logs.
+Before opening a new issue, please check whether the problem has already been reported. If a related issue exists, add any new reproduction details or evidence there instead of creating a duplicate.
+
+### Security Vulnerabilities
+
+Please do not disclose potentially exploitable vulnerabilities in public Issues, discussions, or Pull Requests.
+Use GitHub's private vulnerability reporting feature. If it is unavailable, open a public Issue requesting a private reporting channel without including technical details of the vulnerability.
+
+A useful report should include:
+
+- A concise description of the suspected vulnerability.
+- The affected version, component, or commit.
+- Reproduction steps or a minimal proof of concept, when possible.
+- The potential impact and realistic attack scenario.
+- Relevant evidence, with sensitive information removed.
+
+Please test only systems you own or have explicit permission to assess. Avoid destructive tests, service disruption, and access to other users' data.
+
+### Coordinated Disclosure
+
+Please give the maintainer a reasonable opportunity to investigate the report, assess its impact, and prepare a fix or mitigation before public disclosure.
+The maintainer will make a reasonable effort to acknowledge and investigate reports, communicate relevant findings, and publish appropriate fixes or advisories when necessary. Response and remediation times are not guaranteed.
+
+### Recognition
+
+All valid reports that help improve DEEP's security and reliability are sincerely appreciated.
+With the reporter's consent, their contribution may be acknowledged in the documentation, release notes, or contributor credits.
+There is currently no guaranteed monetary compensation or bug bounty. Reports are welcome even when the reporter cannot provide a fix.
 
 ## References
 
@@ -129,3 +164,9 @@ is bound to the resolved pin; DEEP then performs its unchanged mandatory TLS
 and authority checks through the byte stream. Paths, credentials and content
 are not disclosed by the control messages. Missing/unreachable proxy settings
 have no fallback. See [the native proxy contract](docs/DEEP-PROXY.md).
+
+## Disclaimer
+
+DEEP is provided for educational, research, and experimental purposes, on an "AS IS" and "AS AVAILABLE" basis, without warranties of any kind to the extent permitted by applicable law.
+Users are responsible for how they use, configure, and modify the software, and for complying with applicable laws and regulations.
+The project does not endorse or encourage illegal activity or misuse of the protocol. Nothing in this disclaimer excludes or limits liability that cannot legally be excluded or limited under applicable law.
